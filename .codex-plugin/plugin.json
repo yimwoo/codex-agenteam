@@ -33,7 +33,7 @@
     "defaultPrompt": [
       "Set up a development team for this project",
       "Run the full pipeline on: add user authentication",
-      "Assign the reviewer to check recent changes"
+      "Add a security auditor to the team"
     ],
     "websiteURL": "https://github.com/yimwoo/codex-agenteam",
     "brandColor": "#2563EB"

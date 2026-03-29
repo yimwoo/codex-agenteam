@@ -14,66 +14,73 @@ curl -fsSL https://raw.githubusercontent.com/yimwoo/codex-agenteam/main/install.
 
 Restart Codex, open **Plugins > Local Plugins**, and install AgenTeam.
 
-### 2. Use It
+### 2. Meet Your Team
 
-Open any project in Codex and go -- no setup required:
+Open any project in Codex and type `@` -- your team appears:
 
 ```
-@ateam add user authentication
+@Architect    -- system design, risk analysis
+@Reviewer     -- correctness, security, regressions
+@Implementer  -- write production code
+@Pm           -- strategy, priorities, specs
+@Researcher   -- web, GitHub, docs, community
+@Test Writer  -- unit and integration tests
 ```
 
-AgenTeam auto-initializes with default roles on first use, then orchestrates the full pipeline:
+Talk to any role directly:
 
-1. **Architect** designs the approach and creates a plan
-2. **Implementer** writes the production code
-3. **Test Writer** creates test coverage
-4. **Reviewer** checks for correctness and security
+```
+@Architect review this API design
+@Pm what should we build next?
+@Researcher investigate caching strategies for our use case
+@Reviewer check the auth logic in src/auth.py
+```
 
-That's it. Two steps: install, use.
+Or run the full pipeline through the plugin:
+
+```
+@AgenTeam run the full pipeline on: add user authentication
+```
+
+That's it. Install, then `@` your team.
 
 > Want to customize roles, models, or the pipeline? Edit `agenteam.yaml` in your project root, or run `$ateam:init` for guided setup.
 
 ## Usage Examples
 
-### Codex App
+### Talk to Individual Roles
 
-In the Codex App, use `@ateam` to talk to the plugin directly:
+In the Codex App, `@` any team member directly:
 
 ```
-@ateam set up a team for this project
-
-@ateam ask architect to review this API design
-
-@ateam ask reviewer to check the auth logic in src/auth.py
-
-@ateam ask pm what we should build next
-
-@ateam run the full pipeline on: add rate limiting to the API
-
-@ateam show team status
-
-@ateam add a performance tuning engineer to my team
-
-@ateam add a security auditor that focuses on auth and data leaks
+@Architect propose an approach for caching
+@Implementer implement the caching layer per the approved plan
+@Test Writer add integration tests for the cache
+@Reviewer review the caching implementation
+@Pm prioritize the backlog for next sprint
+@Researcher what are others doing for rate limiting?
 ```
 
-The plugin routes your intent to the right role -- you don't need to remember skill names.
+### Team Operations via @AgenTeam
+
+Use `@AgenTeam` for team-level operations:
+
+```
+@AgenTeam run the full pipeline on: add rate limiting to the API
+@AgenTeam show team status
+@AgenTeam add a security auditor that focuses on OWASP top 10
+@AgenTeam add a performance engineer to profile API response times
+```
 
 ### Codex CLI
 
-In the CLI, use skill invocations directly:
+In the CLI, use skill invocations:
 
 ```bash
-# Run the full design-plan-implement-test-review pipeline
+# Run the full pipeline
 $ateam:run "Refactor the database layer to use connection pooling"
 
-# Dispatch a single role for a focused task
-$ateam:assign architect "Propose an approach for caching"
-$ateam:assign implementer "Implement the caching layer per the approved plan"
-$ateam:assign test_writer "Add integration tests for the cache"
-$ateam:assign reviewer "Review the caching implementation"
-
-# Check what the team is working on
+# Check team status
 $ateam:status
 
 # Add a custom role
@@ -87,30 +94,23 @@ $ateam:generate
 
 **Bug fix with review:**
 ```
-$ateam:assign implementer "Fix the race condition in src/queue.py -- see issue #42"
-$ateam:assign test_writer "Add a regression test for the queue race condition"
-$ateam:assign reviewer "Review the queue fix and test"
+@Implementer fix the race condition in src/queue.py -- see issue #42
+@Test Writer add a regression test for the queue race condition
+@Reviewer review the queue fix and test
 ```
 
 **Architecture decision:**
 ```
-$ateam:assign architect "We need to choose between REST and GraphQL for the new API. Analyze trade-offs for our use case."
+@Architect we need to choose between REST and GraphQL for the new API. Analyze trade-offs.
 ```
 
-**Add a specialist to your team:**
+**Add a specialist:**
 ```
-@ateam add a security auditor that focuses on OWASP top 10 and auth logic
+@AgenTeam add a security auditor that focuses on auth and data leaks
 ```
-AgenTeam infers the role config, confirms with you, writes to `agenteam.yaml`, and generates the agent. Then use it immediately:
+AgenTeam infers the role config, confirms with you, writes to `agenteam.yaml`, and generates the agent. Then `@` them directly:
 ```
-@ateam ask security_auditor to audit the authentication module
-```
-
-**More examples of custom roles:**
-```
-@ateam add a performance engineer to profile API response times
-@ateam add a docs writer that maintains README and API documentation
-@ateam add a DevOps engineer for CI/CD pipeline work
+@Security Auditor audit the authentication module
 ```
 
 ## Built-in Roles
