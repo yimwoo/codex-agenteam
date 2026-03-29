@@ -11,12 +11,20 @@ dispatches your specialists.
 
 ## Process
 
-### 1. Accept Task
+### 1. Auto-Init Guard
+
+Check for `agenteam.yaml` in the project root. If missing:
+- Copy the template: `cp <plugin-dir>/templates/agenteam.yaml.template agenteam.yaml`
+- Set the team name to the project directory name
+- Generate agents: `python3 <runtime>/agenteam_rt.py generate`
+- Tell the user: "AgenTeam auto-initialized with default roles. Edit `agenteam.yaml` to customize."
+
+### 2. Accept Task
 
 Get the task description from the user. If not provided, ask:
 "What task should the team work on?"
 
-### 2. Initialize Run
+### 3. Initialize Run
 
 ```bash
 python3 <runtime>/agenteam_rt.py init --task "<task description>"
@@ -24,19 +32,19 @@ python3 <runtime>/agenteam_rt.py init --task "<task description>"
 
 Capture the run state (run_id, pipeline_mode, stages).
 
-### 3. Determine Pipeline Mode
+### 4. Determine Pipeline Mode
 
 Read `pipeline_mode` from the run state:
 
 - **standalone** -> Run the built-in pipeline (step 4)
 - **hotl** -> Run the HOTL wrapper pipeline (step 5)
 - **dispatch-only** -> Tell the user: "Pipeline is dispatch-only. Use
-  `$ateam-dispatch <role> <task>` to invoke specific roles."
+  `$ateam-assign <role> <task>` to assign tasks to specific roles."
 - **auto** -> Check HOTL availability. If available, ask the user:
   "HOTL detected. Run with HOTL integration? (yes/no)". If yes, use HOTL
   mode. If no, use standalone mode.
 
-### 4. Standalone Pipeline
+### 5. Standalone Pipeline
 
 Iterate through each stage in order:
 
@@ -79,7 +87,7 @@ For each stage in [design, plan, implement, test, review]:
      - All outputs feed into review stage
 ```
 
-### 5. HOTL Wrapper Pipeline
+### 6. HOTL Wrapper Pipeline
 
 When pipeline mode is `hotl`, AgenTeam acts as the outer orchestrator
 and composes HOTL skills for each stage:
@@ -116,7 +124,7 @@ d. REVIEW STAGE:
 between phases. HOTL manages execution within each phase. AgenTeam
 never modifies HOTL internals.
 
-### 6. Completion
+### 7. Completion
 
 After all stages complete:
 - Show a summary of what each role produced

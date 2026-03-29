@@ -40,8 +40,8 @@ print('OK')
   [ -s "$PLUGIN_DIR/skills/ateam-run/SKILL.md" ]
 }
 
-@test "ateam-dispatch SKILL.md exists and is non-empty" {
-  [ -s "$PLUGIN_DIR/skills/ateam-dispatch/SKILL.md" ]
+@test "ateam-assign SKILL.md exists and is non-empty" {
+  [ -s "$PLUGIN_DIR/skills/ateam-assign/SKILL.md" ]
 }
 
 @test "ateam-status SKILL.md exists and is non-empty" {

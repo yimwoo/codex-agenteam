@@ -412,9 +412,69 @@ def hotl_available() -> dict:
     return {"available": False, "path": None}
 
 
+def hotl_active_in_project() -> bool:
+    """Check if the current project is using HOTL (has hotl-workflow-*.md or .hotl/)."""
+    cwd = Path.cwd()
+    if (cwd / ".hotl").exists():
+        return True
+    if list(cwd.glob("hotl-workflow-*.md")):
+        return True
+    return False
+
+
 def cmd_hotl_check(args, config: dict | None = None) -> None:
     """Check HOTL availability."""
-    print(json.dumps(hotl_available()))
+    result = hotl_available()
+    result["active_in_project"] = hotl_active_in_project()
+    print(json.dumps(result))
+
+
+# ---------------------------------------------------------------------------
+# Artifact path resolution
+# ---------------------------------------------------------------------------
+
+# Default AgenTeam artifact paths (standalone mode)
+ATEAM_ARTIFACT_PATHS = {
+    "researcher": "docs/research/",
+    "pm": "docs/strategies/",
+    "architect": "docs/designs/",
+    "implementer_plans": "docs/plans/",
+    "implementer_code": ["src/", "lib/"],
+    "test_writer": ["tests/"],
+}
+
+# HOTL artifact paths (when HOTL is active)
+HOTL_ARTIFACT_PATHS = {
+    "researcher": "docs/research/",
+    "pm": "docs/strategies/",
+    "architect": "docs/plans/",             # HOTL uses docs/plans/ for design docs
+    "implementer_plans": "./",              # HOTL puts hotl-workflow-*.md at project root
+    "implementer_code": ["src/", "lib/"],
+    "test_writer": ["tests/"],
+}
+
+
+def cmd_artifact_paths(args, config: dict) -> None:
+    """Return artifact output paths, auto-detecting HOTL vs standalone."""
+    hotl_info = hotl_available()
+    hotl_in_project = hotl_active_in_project()
+    pipeline_mode = config.get("team", {}).get("pipeline", "standalone")
+
+    # Auto-detect: use HOTL paths if HOTL is active in this project
+    # or if pipeline is explicitly set to hotl
+    use_hotl = (pipeline_mode == "hotl") or (
+        pipeline_mode == "auto" and hotl_info["available"] and hotl_in_project
+    )
+
+    paths = HOTL_ARTIFACT_PATHS if use_hotl else ATEAM_ARTIFACT_PATHS
+
+    result = {
+        "mode": "hotl" if use_hotl else "standalone",
+        "hotl_available": hotl_info["available"],
+        "hotl_active_in_project": hotl_in_project,
+        "paths": paths,
+    }
+    print(json.dumps(result))
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +524,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_hotl_sub = p_hotl.add_subparsers(dest="hotl_cmd")
     p_hotl_sub.add_parser("check", help="Check HOTL availability")
 
+    # artifact-paths
+    sub.add_parser("artifact-paths", help="Show artifact output paths (auto-detects HOTL)")
+
     return parser
 
 
@@ -492,7 +555,9 @@ def main():
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
 
-    if args.command == "init":
+    if args.command == "artifact-paths":
+        cmd_artifact_paths(args, config)
+    elif args.command == "init":
         cmd_init(args, config)
     elif args.command == "generate":
         cmd_generate(args, config)

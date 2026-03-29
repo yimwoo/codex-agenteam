@@ -1,3 +1,49 @@
 test/__pycache__/
 .agenteam/
 .hotl/
+
+# OS
+*.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+
+# HOTL runtime artifacts
+hotl-workflow*.md
+.hotl/
+
+# Design docs and Claude config (generated per-session, not repo content)
+docs/plans/
+CLAUDE.md
+
+# Lore runtime data (user-specific, not repo content)
+.lore/
+
+# Codex local config (user-specific hooks, settings)
+.codex/
+.agents/
+
+# Claude Code local config
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# TypeScript build output (if ever added)
+dist/
+*.tsbuildinfo
+
+# Temp files from atomic writes
+*.tmp

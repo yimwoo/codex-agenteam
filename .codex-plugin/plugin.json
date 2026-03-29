@@ -1,6 +1,39 @@
 {
-  "name": "codex-agenteam",
+  "name": "ateam",
   "version": "1.0.0",
   "description": "AgenTeam: Role-based team collaboration for AI-assisted development. Provides architect, implementer, reviewer, and test-writer roles materialized as Codex-native custom agents.",
-  "skills": "skills/"
+  "author": {
+    "name": "Yiming Wu",
+    "url": "https://github.com/yimwoo"
+  },
+  "repository": "https://github.com/yimwoo/codex-agenteam",
+  "license": "MIT",
+  "keywords": [
+    "team",
+    "roles",
+    "collaboration",
+    "architect",
+    "implementer",
+    "reviewer",
+    "test-writer",
+    "pipeline",
+    "agents",
+    "orchestration"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgenTeam",
+    "shortDescription": "Role-based team collaboration -- architect, implement, test, review.",
+    "longDescription": "AgenTeam organizes AI-assisted development into specialist roles (architect, implementer, test-writer, reviewer) materialized as Codex-native custom agents. Configure pipelines, write policies, and custom roles via agenteam.yaml.",
+    "developerName": "Yiming Wu",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "Set up a development team for this project",
+      "Run the full pipeline on: add user authentication",
+      "Dispatch the reviewer to check recent changes"
+    ],
+    "websiteURL": "https://github.com/yimwoo/codex-agenteam",
+    "brandColor": "#2563EB"
+  }
 }

@@ -21,7 +21,7 @@ if [ "$CURRENT_VERSION" = "unknown" ]; then
 fi
 
 # Check GitHub for latest version (best-effort)
-REPO="yimwoo/codex-agenteam-plugin"
+REPO="yimwoo/codex-agenteam"
 LATEST=$(curl -sf --max-time 5 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name','').lstrip('v'))" 2>/dev/null \
   || echo "")

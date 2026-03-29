@@ -14,22 +14,21 @@ pip install pyyaml toml
 
 ## Installation
 
-### Via Codex Plugin System
+### One-Line Install
 
 ```bash
-# From the Codex plugin marketplace (when published)
-codex plugin install codex-agenteam
+bash <(curl -fsSL https://raw.githubusercontent.com/yimwoo/codex-agenteam/main/install.sh)
 ```
 
-### Manual Installation
+This clones the repo, installs Python dependencies, and registers the plugin in the Codex marketplace.
+
+### Local Install (for contributors)
 
 ```bash
 git clone https://github.com/yimwoo/codex-agenteam.git
 cd codex-agenteam
-pip install -r runtime/requirements.txt
+bash install.sh --local
 ```
-
-Then add the plugin to your Codex configuration as a local plugin.
 
 ## Quick Start
 
@@ -62,8 +61,8 @@ This orchestrates the full pipeline:
 ### 3. Dispatch a Role Directly
 
 ```
-$ateam-dispatch architect "Review this API design"
-$ateam-dispatch reviewer "Check auth logic in src/auth.py"
+$ateam-assign architect "Review this API design"
+$ateam-assign reviewer "Check auth logic in src/auth.py"
 ```
 
 ## Configuration Reference
@@ -126,7 +125,7 @@ pipeline:
 |------|-------------|
 | `standalone` | Built-in pipeline: design -> plan -> implement -> test -> review |
 | `hotl` | Integrates with HOTL plugin for structured workflow execution |
-| `dispatch-only` | No pipeline. Invoke roles ad-hoc via `$ateam-dispatch` |
+| `dispatch-only` | No pipeline. Invoke roles ad-hoc via `$ateam-assign` |
 | `auto` | Detects HOTL and suggests integration. Falls back to standalone. |
 
 ### Write Policy
@@ -156,7 +155,7 @@ In HOTL mode:
 |-------|-----------|---------|
 | ateam-init | `$ateam-init` | Set up team config |
 | ateam-run | `$ateam-run` | Run full pipeline |
-| ateam-dispatch | `$ateam-dispatch` | Dispatch a role |
+| ateam-assign | `$ateam-assign` | Assign a task to a role |
 | ateam-status | `$ateam-status` | Show team state |
 | ateam-add-role | `$ateam-add-role` | Add custom role |
 | ateam-generate | `$ateam-generate` | Regenerate agents |

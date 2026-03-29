@@ -87,7 +87,7 @@ If HOTL is available and pipeline is not already set to `hotl`:
 Show:
 - Config file location
 - Generated agent files
-- Available skills (`$ateam-run`, `$ateam-dispatch`, etc.)
+- Available skills (`$ateam-run`, `$ateam-assign`, etc.)
 - Next step suggestion: "Run `$ateam-run` to start a task with your team."
 
 ## Runtime Path Resolution

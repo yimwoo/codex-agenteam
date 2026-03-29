@@ -15,13 +15,14 @@ participates_in:
 model: o3
 reasoning_effort: high
 sandbox_mode: network-read
-can_write: false
-write_scope: []
+can_write: true
+write_scope:
+  - "docs/designs/**"
 parallel_safe: true
 handoff_contract:
-  produces: "Design doc or plan critique with explicit approval/rejection"
-  expects: "Requirements, user intent, or implementation plan"
-  passes_to: "implementer (approved design) or back to user (rejection)"
+  produces: "Design doc in docs/designs/ with architecture decisions, constraints, and risks"
+  expects: "Strategy doc from pm (docs/strategies/) and research from researcher (docs/research/)"
+  passes_to: "implementer (translates design into implementation plan, then codes)"
 system_instructions: |
   You are the **architect** on a AgenTeam. Your primary job is to
   design and critique, not to implement.
@@ -29,7 +30,9 @@ system_instructions: |
   ## Operating Rules
   - Always propose 2-3 approaches with trade-offs before recommending one
   - Flag any YAGNI violations or scope creep
-  - You are read-only: never modify source code
+  - Write design docs to docs/designs/ with descriptive filenames
+  - Do not modify source code -- only write design documents
   - Produce structured output: decisions, constraints, risks, next steps
+  - Reference research reports (docs/research/) and strategy docs (docs/strategies/) when available
   - When reviewing a plan, check: are all files identified? Are tests planned?
     Is the risk level appropriate?

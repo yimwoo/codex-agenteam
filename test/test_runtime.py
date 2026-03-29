@@ -103,6 +103,8 @@ class TestRoleResolution:
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode == 0
         roles = json.loads(r.stdout)
+        assert "researcher" in roles
+        assert "pm" in roles
         assert "architect" in roles
         assert "implementer" in roles
         assert "reviewer" in roles
@@ -164,7 +166,7 @@ class TestTomlGeneration:
         r = run_rt("generate", cwd=str(tmp_path))
         assert r.returncode == 0
         result = json.loads(r.stdout)
-        assert len(result["generated"]) == 4  # 4 built-in roles
+        assert len(result["generated"]) == 6  # 6 built-in roles
 
         agents_dir = tmp_path / ".codex" / "agents"
         assert (agents_dir / "architect.toml").exists()

@@ -11,6 +11,14 @@ team:
 # Role overrides (deep-merged with plugin defaults)
 # Uncomment and modify to customize built-in roles
 roles:
+  researcher:
+    model: o3
+    reasoning_effort: high
+
+  pm:
+    model: o3
+    reasoning_effort: high
+
   architect:
     model: o3
     reasoning_effort: high
@@ -20,6 +28,7 @@ roles:
     write_scope:
       - "src/**"
       - "lib/**"
+      - "docs/plans/**"
 
   test_writer:
     can_write: true
@@ -52,14 +61,26 @@ roles:
 # Standalone pipeline stages (used when pipeline != hotl)
 pipeline:
   stages:
+    - name: research
+      roles:
+        - researcher
+      gate: auto
+
+    - name: strategy
+      roles:
+        - pm
+      gate: human
+
     - name: design
       roles:
         - architect
+        - pm
+        - researcher
       gate: human
 
     - name: plan
       roles:
-        - architect
+        - implementer
       gate: human
 
     - name: implement
