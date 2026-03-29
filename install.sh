@@ -119,7 +119,8 @@ with open(dest_path, "w") as f:
     json.dump(dest, f, indent=2)
     f.write("\n")
 
-print(f"{action} AgenTeam plugin entry (version {entry['version']})")
+ver = entry["version"]
+print(action + " AgenTeam plugin entry (version " + ver + ")")
 ' "$manifest_path" "$dest_path" "$plugin_source_path"
 }
 
