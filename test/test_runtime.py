@@ -196,7 +196,7 @@ class TestTomlGeneration:
         agent = toml_lib.load(str(tmp_path / ".codex" / "agents" / "architect.toml"))
         assert agent.get("model") == "o3"
         assert agent.get("model_reasoning_effort") == "high"
-        assert agent.get("sandbox_mode") == "network-read"
+        assert agent.get("sandbox_mode") == "workspace-write"
 
     def test_custom_role_generates_toml(self, tmp_path):
         import toml as toml_lib

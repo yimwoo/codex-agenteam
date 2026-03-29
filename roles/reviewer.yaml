@@ -12,7 +12,7 @@ participates_in:
   - review
 model: o3
 reasoning_effort: high
-sandbox_mode: network-read
+sandbox_mode: read-only
 can_write: false
 write_scope: []
 parallel_safe: true

@@ -12,7 +12,7 @@ participates_in:
   - implement
 model: o3-mini
 reasoning_effort: medium
-sandbox_mode: network-none
+sandbox_mode: workspace-write
 can_write: true
 write_scope:
   - "src/**"

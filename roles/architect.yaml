@@ -14,7 +14,7 @@ participates_in:
   - review
 model: o3
 reasoning_effort: high
-sandbox_mode: network-read
+sandbox_mode: workspace-write
 can_write: true
 write_scope:
   - "docs/designs/**"

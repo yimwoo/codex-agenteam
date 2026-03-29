@@ -50,12 +50,12 @@ run the full pipeline.
 
 | Skill | Invoke | Purpose |
 |-------|--------|---------|
-| ateam-assign | `$ateam:assign` | Assign a task to a specific role |
-| ateam-run | `$ateam:run` | Run the full pipeline for a task |
-| ateam-init | `$ateam:init` | Guided team setup |
-| ateam-status | `$ateam:status` | Show team state and progress |
-| ateam-add-role | `$ateam:add-role` | Add a custom role to the team |
-| ateam-generate | `$ateam:generate` | Regenerate .codex/agents/*.toml |
+| assign | `$ateam:assign` | Assign a task to a specific role |
+| run | `$ateam:run` | Run the full pipeline for a task |
+| init | `$ateam:init` | Guided team setup |
+| status | `$ateam:status` | Show team state and progress |
+| add-role | `$ateam:add-role` | Add a custom role to the team |
+| generate | `$ateam:generate` | Regenerate .codex/agents/*.toml |
 
 ## Built-in Roles
 
