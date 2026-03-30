@@ -75,8 +75,8 @@ pipeline:
 
     - name: review
       roles: [reviewer]
-      gate: reviewer       # reviewer agent approval
-      max_retries: 0
+      gate: human           # reviewer IS the stage actor here, so gate
+                            # cannot be "reviewer" (self-approval). Use human.
 ```
 
 ### Final verification (fail-closed)
@@ -464,11 +464,11 @@ Slice 5: cmd_record_gate
 
 Slice 6: Update run skill with verify-retry loop
   Files: skills/run/SKILL.md
-  Tests: manual invocation
+  Tests: manual invocation + automated integration test (see Slice 10)
 
 Slice 7: Update run skill with final_verify
   Files: skills/run/SKILL.md
-  Tests: manual invocation
+  Tests: manual invocation + automated integration test (see Slice 10)
 
 Slice 8: Update config template with verify examples
   Files: templates/agenteam.yaml.template
@@ -478,8 +478,24 @@ Slice 9: Gate type expansion (reviewer, qa)
   Files: runtime dispatch, skills/run/SKILL.md
   Tests: TestGateTypes -- agent gate dispatch, verdict parsing, state persistence
 
-Slice 10: Final integration testing
-  Files: test/test_runtime.py
-  Tests: e2e pipeline with verify
+Slice 10: Automated integration tests for skill orchestration
+  Files: test/test_runtime.py, test/test_verify_integration.bats (new)
+  Tests:
+    - TestVerifyIntegration (pytest): e2e pipeline with verify commands
+      * Stage with passing verify -> advances
+      * Stage with failing verify -> retries up to max_retries
+      * Stage with failing verify + exhausted retries -> pipeline stops
+      * Final verify pass -> success summary
+      * Final verify fail in block mode -> run marked failed
+      * Final verify fail in warn mode -> warning printed, run completes
+      * All-read-only stage with max_retries > 0 -> fail-fast to human
+    - test_verify_integration.bats: script-level tests
+      * verify-stage.sh with --cwd runs in correct directory
+      * verify-stage.sh with passing/failing commands
+      * Full pipeline simulation: init -> dispatch -> verify -> record
+    - TestAgentGateIntegration (pytest):
+      * reviewer gate on implement stage -> separate dispatch
+      * reviewer gate on review stage -> falls back to human (self-approval)
+      * record-gate persists outcome in state
   Gate: human
 ```
