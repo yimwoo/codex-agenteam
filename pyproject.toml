@@ -1,0 +1,33 @@
+[project]
+name = "agenteam"
+version = "1.0.1"
+description = "Specialist AI agents orchestrated as a configurable team pipeline for Codex."
+requires-python = ">=3.10"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.mypy]
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "agenteam.cli"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "agenteam.constants"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "agenteam.branch"
+disallow_untyped_defs = true

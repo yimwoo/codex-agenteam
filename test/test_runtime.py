@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
 # Add runtime to path
@@ -48,6 +47,7 @@ def make_home_env(tmp_path: Path) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Config loading & validation
 # ---------------------------------------------------------------------------
+
 
 class TestConfigValidation:
     def test_valid_config(self, tmp_path):
@@ -104,6 +104,7 @@ class TestConfigValidation:
 # ---------------------------------------------------------------------------
 # Role resolution
 # ---------------------------------------------------------------------------
+
 
 class TestRoleResolution:
     def test_default_roles_loaded(self, tmp_path):
@@ -169,6 +170,7 @@ class TestRoleResolution:
 # ---------------------------------------------------------------------------
 # TOML generation
 # ---------------------------------------------------------------------------
+
 
 class TestTomlGeneration:
     def test_generates_all_roles(self, tmp_path):
@@ -262,6 +264,7 @@ class TestTomlGeneration:
 # Init & state
 # ---------------------------------------------------------------------------
 
+
 class TestInitAndState:
     def test_init_creates_state(self, tmp_path):
         make_config(tmp_path)
@@ -296,6 +299,7 @@ class TestInitAndState:
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
+
 
 class TestDispatch:
     def test_dispatch_implement(self, tmp_path):
@@ -387,8 +391,9 @@ class TestDispatch:
             plan = json.loads(r.stdout)
 
             assert plan["stage"] == stage_name
-            assert plan["dispatch"] or plan["blocked"], \
-                f"expected dispatch or blocked entries for stage {stage_name}"
+            assert (
+                plan["dispatch"] or plan["blocked"]
+            ), f"expected dispatch or blocked entries for stage {stage_name}"
 
             stage_dispatch_counts[stage_name] = len(plan["dispatch"])
             for entry in plan["dispatch"]:
@@ -414,6 +419,7 @@ class TestDispatch:
 # ---------------------------------------------------------------------------
 # Policy check
 # ---------------------------------------------------------------------------
+
 
 class TestPolicyCheck:
     def test_no_overlaps(self, tmp_path):
@@ -448,6 +454,7 @@ class TestPolicyCheck:
 # HOTL detection
 # ---------------------------------------------------------------------------
 
+
 class TestHotlDetection:
     def test_hotl_check_returns_json(self):
         r = run_rt("hotl", "check")
@@ -460,6 +467,7 @@ class TestHotlDetection:
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
+
 
 class TestHealthCommand:
     def test_health_without_config(self, tmp_path):
@@ -526,6 +534,7 @@ class TestHealthCommand:
 # Standup
 # ---------------------------------------------------------------------------
 
+
 class TestStandup:
     def test_standup_no_active_run(self, tmp_path):
         """Standup with no runs should return health=no-active-run and run=null."""
@@ -568,9 +577,7 @@ class TestStandup:
         r = run_rt("standup", cwd=str(tmp_path))
         assert r.returncode == 0
         result = json.loads(r.stdout)
-        assert set(result["roles"]) == {
-            "researcher", "pm", "architect", "dev", "qa", "reviewer"
-        }
+        assert set(result["roles"]) == {"researcher", "pm", "architect", "dev", "qa", "reviewer"}
         # roles should be sorted
         assert result["roles"] == sorted(result["roles"])
 
@@ -744,6 +751,7 @@ class TestStandup:
 # ---------------------------------------------------------------------------
 # compute_health (unit-level via subprocess with crafted state files)
 # ---------------------------------------------------------------------------
+
 
 class TestComputeHealth:
     """Tests for compute_health code paths exercised via standup with crafted state."""
@@ -940,6 +948,7 @@ class TestComputeHealth:
 # cmd_generate warnings
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateWarnings:
     def _make_config_with_n_roles(self, tmp_path: Path, n: int) -> None:
         """Create a config with exactly n custom roles (no built-ins)."""
@@ -1019,6 +1028,7 @@ class TestGenerateWarnings:
 # ---------------------------------------------------------------------------
 # cmd_artifact_paths
 # ---------------------------------------------------------------------------
+
 
 class TestArtifactPaths:
     def test_artifact_paths_standalone_mode(self, tmp_path):
@@ -1111,6 +1121,7 @@ class TestArtifactPaths:
 # find_config: preferred .agenteam/config.yaml path
 # ---------------------------------------------------------------------------
 
+
 class TestFindConfig:
     def test_preferred_config_path(self, tmp_path):
         """find_config prefers .agenteam/config.yaml over agenteam.yaml."""
@@ -1160,6 +1171,7 @@ class TestFindConfig:
 # cmd_status with explicit run-id
 # ---------------------------------------------------------------------------
 
+
 class TestStatusById:
     def test_status_with_explicit_run_id(self, tmp_path):
         """status <run-id> should return that specific run's state."""
@@ -1186,6 +1198,7 @@ class TestStatusById:
 # cmd_dispatch without --run-id
 # ---------------------------------------------------------------------------
 
+
 class TestDispatchNoRunId:
     def test_dispatch_without_run_id(self, tmp_path):
         """dispatch without --run-id should succeed (no state loaded, no write lock)."""
@@ -1203,6 +1216,7 @@ class TestDispatchNoRunId:
 # Branch plan
 # ---------------------------------------------------------------------------
 
+
 class TestBranchPlan:
     def test_serial_mode_with_role(self, tmp_path):
         """Serial mode + --role returns create-branch with ateam/<role>/<slug>."""
@@ -1219,7 +1233,14 @@ class TestBranchPlan:
     def test_branch_mode_with_run_id(self, tmp_path):
         """Serial mode + --run-id returns create-branch with ateam/run/<id>."""
         make_config(tmp_path)
-        r = run_rt("branch-plan", "--task", "build feature", "--run-id", "20260330T150000Z", cwd=str(tmp_path))
+        r = run_rt(
+            "branch-plan",
+            "--task",
+            "build feature",
+            "--run-id",
+            "20260330T150000Z",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
         result = json.loads(r.stdout)
         assert result["action"] == "create-branch"
@@ -1308,7 +1329,14 @@ class TestBranchPlan:
     def test_task_slug_special_chars(self, tmp_path):
         """Task slugs handle special characters correctly."""
         make_config(tmp_path)
-        r = run_rt("branch-plan", "--task", "Fix bug #42: handle NULL in user.email!!!", "--role", "dev", cwd=str(tmp_path))
+        r = run_rt(
+            "branch-plan",
+            "--task",
+            "Fix bug #42: handle NULL in user.email!!!",
+            "--role",
+            "dev",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
         result = json.loads(r.stdout)
         branch = result["branch"]
@@ -1332,6 +1360,7 @@ class TestBranchPlan:
 # ---------------------------------------------------------------------------
 # Config simplification
 # ---------------------------------------------------------------------------
+
 
 class TestConfigSimplification:
     def test_minimal_config_works(self, tmp_path):

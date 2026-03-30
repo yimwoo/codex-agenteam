@@ -53,3 +53,4 @@ dist/
 
 # Temp files from atomic writes
 *.tmp
+runtime/agenteam/__pycache__/
