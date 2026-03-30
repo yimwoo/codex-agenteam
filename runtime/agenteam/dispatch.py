@@ -8,8 +8,7 @@ from pathlib import Path
 
 from .config import resolve_team_config
 from .roles import resolve_roles
-from .state import get_pipeline_stages, resolve_stages_for_run
-
+from .state import resolve_stages_for_run
 
 # ---------------------------------------------------------------------------
 # Pure helpers

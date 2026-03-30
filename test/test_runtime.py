@@ -2271,7 +2271,10 @@ class TestScopeAudit:
         fpath = path / filepath
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(content)
-        subprocess.run(["git", "add", str(filepath)], cwd=str(path), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "add", str(filepath)],
+            cwd=str(path), capture_output=True, check=True,
+        )
         subprocess.run(
             ["git", "commit", "-m", f"add {filepath}"],
             cwd=str(path), capture_output=True, check=True,
@@ -2944,7 +2947,10 @@ class TestGateEval:
         fpath = path / filepath
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(content)
-        subprocess.run(["git", "add", str(filepath)], cwd=str(path), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "add", str(filepath)],
+            cwd=str(path), capture_output=True, check=True,
+        )
         subprocess.run(
             ["git", "commit", "-m", f"add {filepath}"],
             cwd=str(path), capture_output=True, check=True,
@@ -2966,7 +2972,10 @@ class TestGateEval:
             yaml.dump(config, f)
 
     def _setup_run_with_baseline(self, tmp_path, criteria=None):
-        """Init git repo, create config, init run, capture baseline, return (run_id, baseline_sha)."""
+        """Init git repo, create config, init run, capture baseline.
+
+        Returns (run_id, baseline_sha).
+        """
         self._init_git_repo(tmp_path)
         self._make_gate_config(tmp_path, criteria=criteria)
         baseline_sha = self._get_head(tmp_path)
@@ -3379,64 +3388,180 @@ class TestTransitions:
 
     def test_dispatched_to_verifying(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_verifying_to_passed(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "passed", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "passed",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_verifying_to_failed(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "failed", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "failed",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_failed_to_dispatched(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "failed", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "failed",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_passed_to_gated(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "passed", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "gated", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "passed",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "gated",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_gated_to_completed(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "passed", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "gated", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "completed", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "passed",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "gated",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "completed",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_gated_to_rejected(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "verifying", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "passed", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "gated", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "rejected", cwd=str(tmp_path))
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "verifying",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "passed",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "gated",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "rejected",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_completed_is_terminal(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        # Fast-track: pending -> dispatched -> completed (no verify, no gate)
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
-        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "completed", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        # Fast-track: pending -> dispatched -> completed
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
+        run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "completed",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition", "--run-id", run_id,
+            "--stage", "implement", "--to", "dispatched",
+            cwd=str(tmp_path),
+        )
         assert r.returncode != 0
         assert "Invalid transition" in r.stderr
 

@@ -266,6 +266,8 @@ cd codex-agenteam
 bash install.sh --local
 ```
 
+`install.sh` keeps the marketplace entry synced with the plugin manifest, and `update.sh` refreshes both the local checkout and marketplace metadata before you restart Codex.
+
 **Requirements:** Python 3.10+, Codex App or Codex CLI.
 
 ---

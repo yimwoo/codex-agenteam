@@ -27,6 +27,32 @@ ensure_python_dependencies() {
   python3 -m pip install -r runtime/requirements.txt --quiet
 }
 
+ensure_clean_checkout() {
+  local source_dir="$1"
+
+  if [ -n "$(git -C "${source_dir}" status --porcelain)" ]; then
+    echo "Error: ${source_dir} has local changes." >&2
+    echo "Commit or stash them first, or use --local from the repo you want Codex to load." >&2
+    exit 1
+  fi
+}
+
+fast_forward_source_checkout() {
+  local source_dir="$1"
+  local current_branch
+
+  ensure_clean_checkout "${source_dir}"
+  current_branch="$(git -C "${source_dir}" branch --show-current)"
+  if [ "${current_branch}" != "main" ]; then
+    echo "Error: expected ${source_dir} to be on branch main, found ${current_branch}." >&2
+    echo "Switch that checkout back to main, or use --local from your working tree." >&2
+    exit 1
+  fi
+
+  git -C "${source_dir}" fetch origin
+  git -C "${source_dir}" pull --ff-only origin main
+}
+
 refresh_codex_plugin_cache() {
   local source_dir="$1"
   local cache_root="${CODEX_PLUGIN_CACHE_ROOT}"
@@ -71,9 +97,21 @@ manifest_path = sys.argv[1]
 dest_path = sys.argv[2]
 plugin_source_path = sys.argv[3]
 owner_name = os.environ.get("USER", "unknown")
+marketplace_root = os.path.abspath(os.path.join(os.path.dirname(dest_path), "..", ".."))
+plugin_source_abs = os.path.abspath(plugin_source_path)
 
 with open(manifest_path) as f:
     manifest = json.load(f)
+
+relative_plugin_path = os.path.relpath(plugin_source_abs, marketplace_root)
+if relative_plugin_path == ".":
+    marketplace_path = "./"
+elif relative_plugin_path.startswith(".."):
+    raise SystemExit(
+        "Error: plugin source must live inside the marketplace root: " + marketplace_root
+    )
+else:
+    marketplace_path = "./" + relative_plugin_path.replace(os.sep, "/")
 
 entry = {
     "name": manifest["name"],
@@ -82,7 +120,7 @@ entry = {
     "author": manifest.get("author", {"name": owner_name}),
     "source": {
         "source": "local",
-        "path": plugin_source_path,
+        "path": marketplace_path,
     },
     "policy": {
         "installation": "AVAILABLE",
@@ -114,7 +152,7 @@ dest.setdefault("plugins", [])
 
 existing_index = None
 for i, p in enumerate(dest["plugins"]):
-    if p and p.get("name") == "ateam":
+    if p and p.get("name") == manifest["name"]:
         existing_index = i
         break
 
@@ -170,10 +208,7 @@ else
 
   if [ -d "$SOURCE_DIR/.git" ]; then
     echo "Updating existing source checkout at $SOURCE_DIR..."
-    cd "$SOURCE_DIR"
-    git fetch origin
-    git reset --hard origin/main
-    cd - > /dev/null
+    fast_forward_source_checkout "$SOURCE_DIR"
   else
     echo "Cloning AgenTeam to $SOURCE_DIR..."
     mkdir -p "$(dirname "$SOURCE_DIR")"

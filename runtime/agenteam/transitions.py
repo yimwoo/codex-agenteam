@@ -5,7 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-
 # Valid state transitions per the v2.3 design doc.
 VALID_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"dispatched"},

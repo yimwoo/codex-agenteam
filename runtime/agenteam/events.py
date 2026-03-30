@@ -5,7 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-
 # Event types and their required data fields.
 EVENT_TYPES: dict[str, list[str]] = {
     "run_started": ["task", "pipeline_mode"],
@@ -40,7 +39,10 @@ def append_event(
     """
     if event_type not in EVENT_TYPES:
         print(
-            json.dumps({"error": f"Unknown event type '{event_type}'. Valid: {sorted(EVENT_TYPES)}"}),
+            json.dumps({
+                "error": f"Unknown event type '{event_type}'."
+                f" Valid: {sorted(EVENT_TYPES)}",
+            }),
             file=sys.stderr,
         )
         sys.exit(1)

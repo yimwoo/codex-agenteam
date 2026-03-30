@@ -3,13 +3,12 @@
 import hashlib
 import json
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import find_config, load_config, resolve_team_config
+from .config import find_config
 from .events import list_events
-from .state import get_pipeline_stages, resolve_stages_for_run
+from .state import resolve_stages_for_run
 
 # Stale threshold in seconds (10 minutes).
 STALE_THRESHOLD = 600

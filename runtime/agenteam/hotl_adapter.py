@@ -1,7 +1,6 @@
 """HOTL execution-skill adapter: eligibility resolution for role-level skill hooks."""
 
 import json
-import sys
 from pathlib import Path
 
 from .hotl import hotl_available
@@ -16,9 +15,19 @@ HOTL_SKILL_MAP: dict[str, str] = {
 
 # Injection text for each skill when eligible.
 INJECT_TEXT: dict[str, str] = {
-    "tdd": "Use TDD workflow: invoke the hotl:tdd skill before writing implementation code.",
-    "systematic-debugging": "Use systematic debugging: invoke the hotl:systematic-debugging skill before proposing fixes.",
-    "code-review": "Use HOTL code review: invoke the hotl:code-review skill for structured review.",
+    "tdd": (
+        "Use TDD workflow: invoke the hotl:tdd skill"
+        " before writing implementation code."
+    ),
+    "systematic-debugging": (
+        "Use systematic debugging: invoke the"
+        " hotl:systematic-debugging skill"
+        " before proposing fixes."
+    ),
+    "code-review": (
+        "Use HOTL code review: invoke the"
+        " hotl:code-review skill for structured review."
+    ),
 }
 
 
@@ -35,7 +44,12 @@ def _get_stage_status(run_id: str, stage_name: str) -> str | None:
         return None
 
 
-def _check_eligibility(skill: str, role_name: str, stage_name: str, stage_status: str | None) -> tuple[bool, str]:
+def _check_eligibility(
+    skill: str,
+    role_name: str,
+    stage_name: str,
+    stage_status: str | None,
+) -> tuple[bool, str]:
     """Check if a skill is eligible given role, stage, and stage status.
 
     Returns (eligible, reason).
@@ -43,17 +57,29 @@ def _check_eligibility(skill: str, role_name: str, stage_name: str, stage_status
     if skill == "tdd":
         if role_name == "dev" and stage_name == "implement":
             return True, "role is dev, stage is implement"
-        return False, f"requires role=dev and stage=implement (got role={role_name}, stage={stage_name})"
+        return False, (
+            f"requires role=dev and stage=implement"
+            f" (got role={role_name},"
+            f" stage={stage_name})"
+        )
 
     if skill == "systematic-debugging":
         if role_name == "dev" and stage_status in ("failed", "rework"):
             return True, f"role is dev, stage status is {stage_status}"
-        return False, f"requires role=dev and stage status failed/rework (got role={role_name}, status={stage_status})"
+        return False, (
+            f"requires role=dev and stage status"
+            f" failed/rework (got role={role_name},"
+            f" status={stage_status})"
+        )
 
     if skill == "code-review":
         if role_name == "reviewer" and stage_name == "review":
             return True, "role is reviewer, stage is review"
-        return False, f"requires role=reviewer and stage=review (got role={role_name}, stage={stage_name})"
+        return False, (
+            f"requires role=reviewer and stage=review"
+            f" (got role={role_name},"
+            f" stage={stage_name})"
+        )
 
     return False, f"unknown skill '{skill}'"
 

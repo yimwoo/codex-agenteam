@@ -142,6 +142,12 @@ print('OK')
   local tmp_home
   tmp_home="$(mktemp -d "${BATS_TEST_TMPDIR}/ateam-update-home.XXXXXX")"
   local cache_dir="$tmp_home/.codex/plugins/cache/codex-plugins/ateam/stable"
+  local marketplace_file="$PLUGIN_DIR/.agents/plugins/marketplace.json"
+  local expected_version
+
+  expected_version="$(python3 -c "import json; print(json.load(open('$PLUGIN_DIR/.codex-plugin/plugin.json'))['version'])")"
+
+  rm -rf "$PLUGIN_DIR/.agents"
 
   mkdir -p "$cache_dir"
   echo "stale" > "$cache_dir/OLD_MARKER.txt"
@@ -150,6 +156,19 @@ print('OK')
   [ "$status" -eq 0 ]
   [ -f "$cache_dir/.codex-plugin/plugin.json" ]
   [ ! -e "$cache_dir/OLD_MARKER.txt" ]
+  [ -f "$marketplace_file" ]
+
+  run python3 -c "
+import json
+d = json.load(open('$marketplace_file'))
+plugin = next(p for p in d['plugins'] if p['name'] == 'ateam')
+assert plugin['version'] == '$expected_version'
+assert plugin['source']['path'] == './'
+print('OK')
+"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$PLUGIN_DIR/.agents"
 }
 
 @test "smoke_playground.py fallback smoke test passes" {

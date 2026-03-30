@@ -1,14 +1,13 @@
 """Verification planning, recording, and gate management for the verified pipeline."""
 
 import json
-import os
 import sys
 from pathlib import Path
 
 from .config import resolve_team_config
 from .events import append_event
 from .roles import resolve_roles
-from .state import get_pipeline_stages, resolve_stages_for_run
+from .state import resolve_stages_for_run
 
 
 def detect_verify_command(cwd: str | None = None) -> str | None:
@@ -220,7 +219,8 @@ def cmd_verify_plan(args, config: dict) -> None:
 def cmd_record_verify(args, config: dict) -> None:
     """Record a verification result for a stage.
 
-    Arguments: --run-id <id> --stage <stage> --result pass|fail [--output "..."] [--rework-stage <stage>]
+    Arguments: --run-id <id> --stage <stage> --result pass|fail
+               [--output "..."] [--rework-stage <stage>]
     """
     run_id = args.run_id
     stage_name = args.stage
@@ -276,7 +276,12 @@ def cmd_record_verify(args, config: dict) -> None:
         event_data["rework_stage"] = rework_stage
     append_event(run_id, "stage_verified", stage_name, event_data)
 
-    print(json.dumps({"recorded": True, "stage": stage_name, "attempt": attempt_num, "result": result_val}))
+    print(json.dumps({
+        "recorded": True,
+        "stage": stage_name,
+        "attempt": attempt_num,
+        "result": result_val,
+    }))
 
 
 def cmd_final_verify_plan(args, config: dict) -> None:

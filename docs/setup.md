@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.8+** (pre-installed on macOS and most Linux systems)
+- **Python 3.10+** (pre-installed on macOS and most Linux systems)
 - **PyYAML** and **toml** Python packages
 - **Codex CLI** or **Codex App**
 
@@ -20,7 +20,7 @@ pip install pyyaml toml
 curl -fsSL https://raw.githubusercontent.com/yimwoo/codex-agenteam/main/install.sh | bash
 ```
 
-This clones the repo, installs Python dependencies, and registers the plugin in the Codex marketplace.
+This clones the repo, installs Python dependencies, and registers the plugin in the Codex marketplace using the plugin manifest as the source of truth for marketplace metadata.
 
 ### Local Install (for contributors)
 
@@ -29,6 +29,8 @@ git clone https://github.com/yimwoo/codex-agenteam.git
 cd codex-agenteam
 bash install.sh --local
 ```
+
+`update.sh` refreshes the plugin checkout and rewrites the marketplace entry so the version shown in Codex stays aligned with `.codex-plugin/plugin.json`.
 
 ## Quick Start
 

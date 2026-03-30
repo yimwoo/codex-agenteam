@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "smoke_playground.py"
 TEMPLATE = ROOT / "templates" / "agenteam.yaml.template"

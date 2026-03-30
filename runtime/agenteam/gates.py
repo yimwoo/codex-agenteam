@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .state import get_pipeline_stages, resolve_stages_for_run
+from .state import resolve_stages_for_run
 
 
 def cmd_gate_eval(args, config: dict) -> None:
@@ -61,7 +61,11 @@ def cmd_gate_eval(args, config: dict) -> None:
     baseline = stage_state.get("baseline")
     if not baseline:
         print(
-            json.dumps({"error": f"No baseline found for stage '{stage_name}'. Run stage-baseline capture first."}),
+            json.dumps({
+                "error": f"No baseline found for stage"
+                f" '{stage_name}'."
+                " Run stage-baseline capture first.",
+            }),
             file=sys.stderr,
         )
         sys.exit(1)
