@@ -182,7 +182,7 @@ Possible issues (non-empty `issues` array):
 |-----------|-------|----------------|
 | Not a git repo | `"not-a-git-repo"` | Abort with clear message |
 | Dirty worktree | `"dirty-worktree"` | **Block for serial/worktree mode.** User must stash or commit before proceeding. Carrying uncommitted changes into a new branch breaks the isolation guarantee. For scoped mode (no branch switch), this is a warning only. |
-| Detached HEAD | `"detached-head"` | Warn user, suggest checking out a branch |
+| Detached HEAD | `"detached-head"` | **Block.** `git rev-parse --abbrev-ref HEAD` returns `HEAD` in this state, which is not enough to restore the original commit after branch creation. User must checkout a branch first. Phase 2 could store and restore the commit SHA, but Phase 1 hard-blocks for simplicity. |
 
 ### `create-branch` behavior
 
