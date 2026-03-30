@@ -1,4 +1,4 @@
-# AgenTeam -- Role-Based AI Team Collaboration for Codex
+# AgenTeam -- Specialist AI Agents as Your Team for Codex
 
 **AgenTeam** is a [Codex](https://codex.ai) plugin that turns a single AI session into a team of specialists. Define roles like architect, implementer, test-writer, and reviewer -- then orchestrate them through a configurable pipeline. Each role becomes a Codex-native custom agent (`.codex/agents/*.toml`) with its own model, permissions, and write scope.
 
