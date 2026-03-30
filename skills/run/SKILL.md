@@ -25,15 +25,64 @@ Check for `.agenteam/config.yaml` (or legacy `agenteam.yaml`) in the project roo
 Get the task description from the user. If not provided, ask:
 "What task should the team work on?"
 
-### 3. Initialize Run
+### 3. Branch Isolation
 
-```bash
-python3 <runtime>/agenteam_rt.py init --task "<task description>"
-```
+Before initializing the run, set up branch isolation. This applies to
+`standalone` and `dispatch-only` pipeline modes. If `pipeline: hotl`,
+skip this step (HOTL owns git lifecycle for pipeline runs).
+
+1. **Preflight:**
+   ```bash
+   bash <plugin-dir>/scripts/git-isolate.sh preflight
+   ```
+   - If `not-a-git-repo`: skip isolation
+   - If `dirty-worktree` and mode is serial or worktree: **block.** Tell user
+     to stash or commit first.
+   - If `detached-head`: **block.** Tell user to checkout a branch first.
+
+2. **Capture current branch** (before any git mutation):
+   ```bash
+   RETURN_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+   ```
+   Store this for the entire run. Return to it after the final stage.
+
+3. **Initialize the run first** (to get run_id):
+   ```bash
+   python3 <runtime>/agenteam_rt.py init --task "<task description>"
+   ```
+   Capture the `run_id` from the output.
+
+4. **Get branch plan:**
+   ```bash
+   python3 <runtime>/agenteam_rt.py branch-plan --task "<task>" --run-id "<run_id>"
+   ```
+
+5. **Execute the plan:**
+   - If `action: create-branch`:
+     `bash <plugin-dir>/scripts/git-isolate.sh create-branch <branch>`
+   - If `action: create-worktree`:
+     `bash <plugin-dir>/scripts/git-isolate.sh create-worktree <path> <branch>`
+   - If `action: use-current`: show warning, continue.
+   - If `action: none` (hotl-deferred): skip.
+
+6. All pipeline stages run on the created branch/worktree.
+
+7. **After the final stage completes (or on abort):**
+   - If `action` was `create-branch`:
+     `bash <plugin-dir>/scripts/git-isolate.sh return $RETURN_BRANCH`
+     Tell user: "Pipeline work is on branch `<branch>`. Merge or create a PR."
+   - If `action` was `create-worktree`:
+     `bash <plugin-dir>/scripts/git-isolate.sh cleanup-worktree <path>`
+     Tell user: "Pipeline work is on branch `<branch>`."
+
+### 4. Initialize Run
+
+(Run was already initialized in step 3.3 above to obtain the run_id for
+branch naming. Capture the run state from that output.)
 
 Capture the run state (run_id, pipeline_mode, stages).
 
-### 4. Determine Pipeline Mode
+### 5. Determine Pipeline Mode
 
 Read `pipeline_mode` from the run state:
 
@@ -45,7 +94,7 @@ Read `pipeline_mode` from the run state:
   "HOTL detected. Run with HOTL integration? (yes/no)". If yes, use HOTL
   mode. If no, use standalone mode.
 
-### 5. Standalone Pipeline
+### 6. Standalone Pipeline
 
 Iterate through each stage in order:
 
@@ -88,7 +137,7 @@ For each stage in [design, plan, implement, test, review]:
      - All outputs feed into review stage
 ```
 
-### 6. HOTL Wrapper Pipeline
+### 7. HOTL Wrapper Pipeline
 
 When pipeline mode is `hotl`, AgenTeam acts as the outer orchestrator
 and composes HOTL skills for each stage:
@@ -125,7 +174,7 @@ d. REVIEW STAGE:
 between phases. HOTL manages execution within each phase. AgenTeam
 never modifies HOTL internals.
 
-### 7. Completion
+### 8. Completion
 
 After all stages complete:
 - Show a summary of what each role produced

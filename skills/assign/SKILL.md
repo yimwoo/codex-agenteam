@@ -52,7 +52,56 @@ If a write lock is active and the role needs to write:
   override with confirmation."
 - Do not proceed without user approval.
 
-### 5. Resolve Artifact Paths
+### 5. Branch Isolation
+
+If the role has `can_write: true`, isolate the work on a dedicated branch
+or worktree. Assign ALWAYS applies isolation regardless of pipeline mode
+(even `pipeline: hotl`), because assign is user-initiated and outside
+HOTL's execution flow.
+
+1. **Preflight:**
+   ```bash
+   bash <plugin-dir>/scripts/git-isolate.sh preflight
+   ```
+   - If `not-a-git-repo`: skip isolation (non-git projects work without it)
+   - If `dirty-worktree` and mode is serial or worktree: **block.** Tell user:
+     "Uncommitted changes detected. Please stash or commit before assigning
+     a writing task, to ensure branch isolation."
+   - If `detached-head`: **block.** Tell user: "You are in detached HEAD state.
+     Please checkout a branch before assigning a writing task."
+
+2. **Capture current branch** (before any git mutation):
+   ```bash
+   RETURN_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+   ```
+
+3. **Get branch plan:**
+   ```bash
+   python3 <runtime>/agenteam_rt.py branch-plan --task "<task>" --role "<role>"
+   ```
+
+4. **Execute the plan:**
+   - If `action: create-branch`:
+     `bash <plugin-dir>/scripts/git-isolate.sh create-branch <branch> <base>`
+   - If `action: create-worktree`:
+     `bash <plugin-dir>/scripts/git-isolate.sh create-worktree <path> <branch> <base>`
+   - If `action: use-current`: show the warning from the plan. Continue on
+     current branch.
+
+5. **Launch agent** on the isolated branch/worktree (step 7 below).
+
+6. **After agent completes:**
+   - If `action` was `create-branch`:
+     `bash <plugin-dir>/scripts/git-isolate.sh return $RETURN_BRANCH`
+     Tell user: "Work is on branch `<branch>`. Merge or create a PR when ready."
+   - If `action` was `create-worktree`:
+     `bash <plugin-dir>/scripts/git-isolate.sh cleanup-worktree <path>`
+     Tell user: "Work is on branch `<branch>`. Worktree cleaned up (or
+     preserved if it has uncommitted changes)."
+
+If the role has `can_write: false`, skip this step entirely.
+
+### 6. Resolve Artifact Paths
 
 ```bash
 python3 <runtime>/agenteam_rt.py artifact-paths
@@ -61,7 +110,7 @@ python3 <runtime>/agenteam_rt.py artifact-paths
 Pass the resolved output paths to the agent so it writes artifacts to
 the correct location (standalone vs HOTL mode).
 
-### 6. Launch Agent
+### 7. Launch Agent
 
 Launch the role as a Codex subagent using the generated agent file:
 - Agent file: `.codex/agents/<role-name>.toml`
@@ -69,7 +118,7 @@ Launch the role as a Codex subagent using the generated agent file:
 - Pass relevant project context (current branch, recent changes, etc.)
 - Pass artifact paths from step 5
 
-### 7. Collect Output
+### 8. Collect Output
 
 Present the agent's output to the user with the role name as context:
 "**[architect]:** <output>"

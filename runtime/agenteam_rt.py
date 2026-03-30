@@ -523,6 +523,89 @@ def cmd_health(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Branch plan
+# ---------------------------------------------------------------------------
+
+import re
+
+
+def make_task_slug(task: str) -> str:
+    """Convert a task description into a branch-safe slug."""
+    slug = task.lower()[:40]
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    return slug or "task"
+
+
+def cmd_branch_plan(args, config: dict) -> None:
+    """Return a branch/worktree plan based on write mode and context."""
+    write_mode = config.get("team", {}).get("parallel_writes", {}).get("mode", "serial")
+    pipeline_mode = config.get("team", {}).get("pipeline", "standalone")
+    task = args.task
+    run_id = getattr(args, "run_id", None)
+    role = getattr(args, "role", None)
+
+    # HOTL deferral: only for run context (--run-id), not assign (--role)
+    if pipeline_mode == "hotl" and run_id and not role:
+        print(json.dumps({
+            "mode": "hotl-deferred",
+            "action": "none",
+            "branch": None,
+            "note": "HOTL run mode defers git lifecycle to HOTL execution. Phase 3 will unify.",
+            "pipeline_mode": pipeline_mode,
+        }))
+        return
+
+    slug = make_task_slug(task)
+
+    if write_mode == "scoped":
+        print(json.dumps({
+            "mode": "scoped",
+            "action": "use-current",
+            "branch": None,
+            "warning": "Scoped mode uses the current branch. This is NOT isolation -- "
+                       "it trusts that write_scope patterns do not overlap. "
+                       "Verify with: agenteam_rt.py policy check",
+            "pipeline_mode": pipeline_mode,
+        }))
+        return
+
+    # Determine branch name and base
+    if run_id:
+        # Pipeline run: one branch per run, fork from default branch
+        branch = f"ateam/run/{run_id}"
+        base_branch = "main"
+    elif role:
+        # Ad-hoc assign: one branch per assignment, fork from current HEAD
+        branch = f"ateam/{role}/{slug}"
+        base_branch = "current"
+    else:
+        branch = f"ateam/{slug}"
+        base_branch = "current"
+
+    if write_mode == "worktree":
+        worktree_slug = f"{role or 'run'}-{slug}" if role else slug
+        print(json.dumps({
+            "mode": "worktree",
+            "action": "create-worktree",
+            "branch": branch,
+            "worktree_path": f".ateam-worktrees/{worktree_slug}",
+            "base_branch": base_branch,
+            "pipeline_mode": pipeline_mode,
+        }))
+        return
+
+    # Default: serial -> create branch
+    print(json.dumps({
+        "mode": "serial",
+        "action": "create-branch",
+        "branch": branch,
+        "base_branch": base_branch,
+        "pipeline_mode": pipeline_mode,
+    }))
+
+
+# ---------------------------------------------------------------------------
 # Artifact path resolution
 # ---------------------------------------------------------------------------
 
@@ -756,6 +839,12 @@ def build_parser() -> argparse.ArgumentParser:
     # artifact-paths
     sub.add_parser("artifact-paths", help="Show artifact output paths (auto-detects HOTL)")
 
+    # branch-plan
+    p_branch = sub.add_parser("branch-plan", help="Resolve branch/worktree plan for a task")
+    p_branch.add_argument("--task", required=True, help="Task description")
+    p_branch.add_argument("--run-id", dest="run_id", default=None, help="Run ID (pipeline context)")
+    p_branch.add_argument("--role", default=None, help="Role name (assign context)")
+
     # standup
     p_standup = sub.add_parser("standup", help="Assemble standup summary")
     p_standup.add_argument("--task", required=False, default=None,
@@ -799,7 +888,9 @@ def main():
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
 
-    if args.command == "standup":
+    if args.command == "branch-plan":
+        cmd_branch_plan(args, config)
+    elif args.command == "standup":
         cmd_standup(args, config)
     elif args.command == "artifact-paths":
         cmd_artifact_paths(args, config)

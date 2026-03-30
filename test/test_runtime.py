@@ -1197,3 +1197,133 @@ class TestDispatchNoRunId:
         # With no state/lock, writers should be dispatched (not blocked)
         assert len(plan["dispatch"]) > 0
         assert plan["blocked"] == []
+
+
+# ---------------------------------------------------------------------------
+# Branch plan
+# ---------------------------------------------------------------------------
+
+class TestBranchPlan:
+    def test_serial_mode_with_role(self, tmp_path):
+        """Serial mode + --role returns create-branch with ateam/<role>/<slug>."""
+        make_config(tmp_path)
+        r = run_rt("branch-plan", "--task", "add user auth", "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "serial"
+        assert result["action"] == "create-branch"
+        assert result["branch"] == "ateam/dev/add-user-auth"
+        assert result["base_branch"] == "current"
+        assert result["pipeline_mode"] == "standalone"
+
+    def test_serial_mode_with_run_id(self, tmp_path):
+        """Serial mode + --run-id returns create-branch with ateam/run/<id>."""
+        make_config(tmp_path)
+        r = run_rt("branch-plan", "--task", "build feature", "--run-id", "20260330T150000Z", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["action"] == "create-branch"
+        assert result["branch"] == "ateam/run/20260330T150000Z"
+        assert result["base_branch"] == "main"
+
+    def test_worktree_mode(self, tmp_path):
+        """Worktree mode returns create-worktree with path."""
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "team": {"pipeline": "standalone", "parallel_writes": {"mode": "worktree"}},
+            "roles": {},
+            "pipeline": {"stages": []},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("branch-plan", "--task", "fix bug", "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "worktree"
+        assert result["action"] == "create-worktree"
+        assert result["branch"].startswith("ateam/dev/")
+        assert "worktree_path" in result
+        assert result["worktree_path"].startswith(".ateam-worktrees/")
+
+    def test_scoped_mode(self, tmp_path):
+        """Scoped mode returns use-current with warning."""
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "team": {"pipeline": "standalone", "parallel_writes": {"mode": "scoped"}},
+            "roles": {},
+            "pipeline": {"stages": []},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("branch-plan", "--task", "test", "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "scoped"
+        assert result["action"] == "use-current"
+        assert result["branch"] is None
+        assert "warning" in result
+        assert "NOT isolation" in result["warning"]
+
+    def test_hotl_pipeline_with_run_id_defers(self, tmp_path):
+        """HOTL pipeline + --run-id returns hotl-deferred."""
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "team": {"pipeline": "hotl", "parallel_writes": {"mode": "serial"}},
+            "roles": {},
+            "pipeline": {"stages": []},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("branch-plan", "--task", "test", "--run-id", "abc123", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "hotl-deferred"
+        assert result["action"] == "none"
+
+    def test_hotl_pipeline_with_role_still_isolates(self, tmp_path):
+        """HOTL pipeline + --role (assign) still gets branch isolation."""
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "team": {"pipeline": "hotl", "parallel_writes": {"mode": "serial"}},
+            "roles": {},
+            "pipeline": {"stages": []},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("branch-plan", "--task", "fix auth", "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "serial"
+        assert result["action"] == "create-branch"
+        assert result["branch"] == "ateam/dev/fix-auth"
+
+    def test_task_slug_special_chars(self, tmp_path):
+        """Task slugs handle special characters correctly."""
+        make_config(tmp_path)
+        r = run_rt("branch-plan", "--task", "Fix bug #42: handle NULL in user.email!!!", "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        branch = result["branch"]
+        # Should be safe for git branch names
+        assert " " not in branch
+        assert "#" not in branch
+        assert "!" not in branch
+        assert branch.startswith("ateam/dev/")
+
+    def test_task_slug_long_task(self, tmp_path):
+        """Long task descriptions are truncated to 40 chars in slug."""
+        make_config(tmp_path)
+        long_task = "a" * 100
+        r = run_rt("branch-plan", "--task", long_task, "--role", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        slug = result["branch"].replace("ateam/dev/", "")
+        assert len(slug) <= 40

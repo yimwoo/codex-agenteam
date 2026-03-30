@@ -195,7 +195,7 @@ team:
   name: my-project-team
   pipeline: standalone        # standalone | hotl | dispatch-only | auto
   parallel_writes:
-    mode: serial              # serial | scoped (v2) | worktree (v3)
+    mode: serial              # serial | scoped | worktree
 
 roles:
   # Analysis/review roles inherit the user's default Codex model
@@ -249,15 +249,20 @@ pipeline:
 | `dispatch-only` | No pipeline -- invoke roles ad-hoc via `$ateam:assign` |
 | `auto` | Detects HOTL availability and suggests integration; falls back to standalone |
 
-### Write Policy
+### Write Policy & Branch Isolation
 
-AgenTeam enforces write safety so agents don't step on each other:
+AgenTeam enforces write safety so agents don't step on each other. Writing
+agents (`@Dev`, `@Qa`, custom writers) are automatically isolated on dedicated
+branches or worktrees -- they never work directly on your current branch.
 
-| Mode | Behavior |
-|------|----------|
-| `serial` (default) | One writer at a time. Others queue. Safe for any project. |
-| `scoped` (v2) | Parallel writes with non-overlapping `write_scope` per role |
-| `worktree` (v3) | Each writer gets an isolated git worktree |
+| Mode | Branch Behavior | Concurrency |
+|------|----------------|-------------|
+| `serial` (default) | Creates `ateam/<role>/<task>` branch per assignment, `ateam/run/<id>` per pipeline run | One writer at a time. Others queue. |
+| `scoped` | Stays on current branch (trusts non-overlapping `write_scope`) | Parallel writes within scope boundaries |
+| `worktree` | Creates isolated git worktree per writer | Full parallel isolation |
+
+Preflight checks block on dirty worktree and detached HEAD before any git
+mutation. Worktrees with uncommitted changes are preserved (never auto-deleted).
 
 ## How It Works
 

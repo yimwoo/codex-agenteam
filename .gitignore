@@ -1,5 +1,6 @@
 test/__pycache__/
 .agenteam/
+.ateam-worktrees/
 agenteam.yaml
 .hotl/
 

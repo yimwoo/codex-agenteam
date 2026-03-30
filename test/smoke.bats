@@ -120,6 +120,15 @@ print('OK')
   [ -f "$PLUGIN_DIR/runtime/requirements.txt" ]
 }
 
+@test "git-isolate.sh exists and is executable" {
+  [ -x "$PLUGIN_DIR/scripts/git-isolate.sh" ]
+}
+
+@test "git-isolate.sh --help prints usage" {
+  run bash "$PLUGIN_DIR/scripts/git-isolate.sh" invalid-cmd
+  [ "$status" -ne 0 ]
+}
+
 @test "update.sh --local refreshes Codex plugin cache" {
   local tmp_home
   tmp_home="$(mktemp -d "${BATS_TEST_TMPDIR}/ateam-update-home.XXXXXX")"
