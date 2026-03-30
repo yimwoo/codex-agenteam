@@ -97,3 +97,9 @@ pipeline:
   #       - refactor
   #       - add feature
   #       - fix bug
+  #   collaborative:
+  #     stages: [research, strategy, design, implement, test, review]
+  #     hints:
+  #       - new feature
+  #       - build something
+  #       - design and implement

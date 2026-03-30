@@ -108,6 +108,10 @@ When you give `@ATeam` a task, it runs the full development pipeline:
 
 Each role writes to a scoped directory — no overlaps, safe for parallel execution. Human gates pause the pipeline until you approve.
 
+### Collaborative Mode
+
+When using a `collaborative` profile, discovery roles (researcher, architect, PM) run in parallel and produce a convergence summary before handing off to implementation. You see what each specialist found, approve the handoff, then dev/qa/reviewer execute serially with per-role visibility.
+
 ---
 
 ## Add Team Members

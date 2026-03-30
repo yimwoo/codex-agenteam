@@ -50,6 +50,209 @@ If the project config defines pipeline profiles, select one before init:
    python3 <runtime>/agenteam_rt.py init --task "<task>" --profile <name>
    ```
 
+### 2c. Collaborative Discovery Mode
+
+If multiple discovery-phase stages can run in parallel, switch to
+collaborative discovery mode. This gives users faster results and a
+structured handoff to implementation.
+
+**Trigger — collaborative mode activates when either:**
+
+1. **Profile-based**: The selected profile's front stages all have roles
+   with `parallel_safe: true` and disjoint `write_scope` patterns.
+2. **Intent-based**: The user explicitly mentions multiple discovery
+   roles: "@architect @pm @researcher build X"
+
+When not triggered (0 or 1 qualifying stages, or user didn't request
+multi-role work), skip this section entirely — the run skill behaves
+as normal serial execution.
+
+**Detection logic:**
+
+1. Look at the first N stages in the effective pipeline. For each stage,
+   check its roles via `agenteam-rt roles show <role>`.
+2. A stage qualifies for the discovery batch if ALL its roles have
+   `parallel_safe: true`.
+3. Additionally, ALL roles across ALL qualifying stages must have
+   disjoint `write_scope` patterns (no scope string appears in more
+   than one role's write_scope list).
+4. The first stage whose roles include a non-`parallel_safe` writer
+   (e.g., dev with `src/**`) marks the start of the "execution" phase.
+5. If 0 or 1 stages qualify, fall back to normal serial execution.
+
+**Note:** The built-in discovery roles (researcher, pm, architect) are
+all `can_write: true` with `parallel_safe: true` and disjoint scopes
+(`docs/research/**`, `docs/strategies/**`, `docs/designs/**`). The
+parallelism basis is disjoint scopes, not read-only status.
+
+**When collaborative mode is active, the following phases apply:**
+
+#### Phase 1: Parallel Discovery Dispatch
+
+**Isolation mode constraints:**
+
+| Isolation Mode | Behavior |
+|---------------|----------|
+| `none` (scoped parallel) | Dispatch all discovery-batch roles as parallel subagents |
+| `branch` | Serial fallback — dispatch discovery stages one at a time |
+| `worktree` | Serial fallback — dispatch discovery stages one at a time |
+
+In `isolation: none` mode:
+- Collect all roles across discovery-batch stages
+- Verify all have `parallel_safe: true` and disjoint `write_scope`
+- Dispatch all as parallel subagents (single group)
+- If scope overlap detected: fall back to serial
+
+In `branch` or `worktree` mode:
+- Dispatch each discovery stage serially (existing behavior)
+- The convergence summary and handoff gate still apply after all
+  complete — the only difference is discovery takes longer
+
+For each discovery stage:
+- Transition: `pending → dispatched`
+- After actual launch: emit `stage_dispatched` event
+- Check HOTL skill eligibility before each dispatch (same as step c0)
+- Each role writes to its standard artifact path:
+  - Researcher → `docs/research/<date>-<topic>.md`
+  - PM → `docs/strategies/<date>-<topic>.md`
+  - Architect → `docs/designs/<date>-<topic>.md`
+
+Wait for all discovery roles to complete.
+
+**Dual-use design doc format (Architect):**
+
+The architect's design artifact should include a HOTL-friendly contract
+block at the end — human-readable narrative first, execution contracts
+second:
+
+```
+# Design: <Feature Name>
+
+## Overview
+[human-readable design narrative]
+
+## Proposed Approach
+[architecture, components, data flow]
+
+## Interfaces / File Targets
+[specific files/modules to create or modify]
+
+## Risks
+[what could go wrong, migration concerns]
+
+---
+
+## Execution Contracts
+
+### Intent
+- objective: [one sentence]
+- constraints: [what must not change]
+- success_criteria: [how we know it's done]
+
+### Verification
+- [test command or check]
+
+### Handoff to Dev
+- [ordered list of implementation steps]
+- [estimated scope per step]
+```
+
+This is HOTL-compatible by shape — HOTL can consume the contracts if
+present, dev can plan from them without HOTL.
+
+#### Phase 2: Convergence Summary
+
+After all discovery roles complete, render an inline summary:
+
+```
+Discovery complete (3 specialists, ~45s):
+
+Researcher → docs/research/2026-03-30-auth-analysis.md
+  - OAuth2 + PKCE is industry standard for this use case
+  - Competitor X shipped passkey support last month
+
+Architect → docs/designs/2026-03-30-auth-design.md
+  - Proposes middleware pattern in src/auth/
+  - Flags: session storage needs migration
+
+PM → docs/strategies/2026-03-30-auth-strategy.md
+  - Priority 1: OAuth2 basic flow (2-3 days)
+  - Priority 2: Passkey support (stretch goal)
+
+Recommendation: Ready for dev handoff. Review architect artifact
+first — migration risk flagged.
+
+Approve handoff to Dev? (yes / review artifacts first / stop)
+```
+
+**Format rules:**
+- One line per role with artifact path
+- 2-4 bullets max per role (outcome-shaped, not raw telemetry)
+- One short controller recommendation line
+- Then the gate prompt
+- No cross-role synthesis — if roles disagree, it shows in their
+  individual bullets
+
+**Partial failure:** If one discovery role fails while others succeed,
+include successful roles' outputs normally and show the failed role
+with an error note: "Researcher: unavailable — [error reason]". Still
+present the handoff gate — user decides whether to proceed.
+
+**State transitions at convergence:**
+- For each discovery stage: `dispatched → passed`
+- If stage has human gate: `passed → gated`
+- No `stage_completed` events yet — stages stay in `gated` or `passed`
+  until the handoff gate is resolved
+
+#### Phase 3: Handoff Gate
+
+Pause before the first writing stage. Present options:
+- **yes** → continue to execution phase
+- **review artifacts first** → user reads the full docs, then returns
+- **stop** → emit `run_finished` with `status: stopped`
+
+On approval:
+- For each discovery stage: transition to `completed`
+- Emit `stage_completed` with `result: passed` for each
+- Record gate for each stage that had a human gate
+- Continue to the first execution stage
+
+On rejection (stop):
+- `gated → rejected` for gated stages
+- Emit `stage_completed` with `result: failed, reason: handoff rejected`
+- Emit `run_finished` with `status: stopped`
+
+**Headless policy (CI=true or no TTY):**
+- Auto-approve the handoff gate
+- Log the convergence summary to stderr
+- Continue to execution immediately
+
+#### Phase 4: Serial Execution with Per-Role Visibility
+
+After handoff approval, continue through remaining stages (implement →
+test → review) using the normal serial pipeline flow from step 6.
+
+The addition is **per-role announcements** at each stage:
+
+Start: `Dev is implementing...`
+Complete: `Dev completed → added OAuth middleware in src/auth/, login page updated`
+
+Start: `Qa is testing...`
+Complete: `Qa completed → 8 tests added (auth flow, session handling), all passing`
+
+Start: `Reviewer is reviewing...`
+Complete: `Reviewer completed → PASS, no blocking findings`
+
+**Announcement rules:**
+- Outcome-shaped: primary is what changed and whether it passed
+- Secondary (if helpful): file counts, test counts
+- Never: raw diffs, full test output, or telemetry dumps
+
+These announcements also apply in normal (non-collaborative) serial
+mode — per-role visibility is always useful.
+
+---
+
 ### 3. Branch Isolation
 
 Before initializing the run, set up branch isolation. This applies to
