@@ -37,12 +37,16 @@ def cmd_gate_eval(args, config: dict) -> None:
     criteria_config = stage_config.get("criteria", {})
     if not criteria_config:
         # No criteria configured -- auto-pass
-        print(json.dumps({
-            "stage": stage_name,
-            "passed": True,
-            "criteria": {},
-            "failed_criteria": [],
-        }))
+        print(
+            json.dumps(
+                {
+                    "stage": stage_name,
+                    "passed": True,
+                    "criteria": {},
+                    "failed_criteria": [],
+                }
+            )
+        )
         return
 
     # Get baseline from state
@@ -61,11 +65,13 @@ def cmd_gate_eval(args, config: dict) -> None:
     baseline = stage_state.get("baseline")
     if not baseline:
         print(
-            json.dumps({
-                "error": f"No baseline found for stage"
-                f" '{stage_name}'."
-                " Run stage-baseline capture first.",
-            }),
+            json.dumps(
+                {
+                    "error": f"No baseline found for stage"
+                    f" '{stage_name}'."
+                    " Run stage-baseline capture first.",
+                }
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -146,9 +152,13 @@ def cmd_gate_eval(args, config: dict) -> None:
 
     overall_passed = len(failed_criteria) == 0
 
-    print(json.dumps({
-        "stage": stage_name,
-        "passed": overall_passed,
-        "criteria": criteria_results,
-        "failed_criteria": failed_criteria,
-    }))
+    print(
+        json.dumps(
+            {
+                "stage": stage_name,
+                "passed": overall_passed,
+                "criteria": criteria_results,
+                "failed_criteria": failed_criteria,
+            }
+        )
+    )

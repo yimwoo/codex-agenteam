@@ -43,8 +43,7 @@ def compute_health(state: dict | None) -> tuple[str, list[str]]:
                     if elapsed > 1800:
                         at_risk_stages.append(name)
                         warnings.append(
-                            f"Stage '{name}' has been in-progress for "
-                            f"{int(elapsed // 60)} minutes"
+                            f"Stage '{name}' has been in-progress for {int(elapsed // 60)} minutes"
                         )
                 except (TypeError, ValueError):
                     pass

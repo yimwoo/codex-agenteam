@@ -82,12 +82,14 @@ def cmd_run_report(args, config: dict) -> None:
     for stage_name, stage_state in state.get("stages", {}).items():
         for attempt in stage_state.get("verify_attempts", []):
             if attempt.get("rework_stage"):
-                rework_history.append({
-                    "stage": stage_name,
-                    "attempt": attempt["attempt"],
-                    "result": attempt["result"],
-                    "rework_stage": attempt["rework_stage"],
-                })
+                rework_history.append(
+                    {
+                        "stage": stage_name,
+                        "attempt": attempt["attempt"],
+                        "result": attempt["result"],
+                        "rework_stage": attempt["rework_stage"],
+                    }
+                )
 
     report_path = f".agenteam/reports/{run_id}.md"
 

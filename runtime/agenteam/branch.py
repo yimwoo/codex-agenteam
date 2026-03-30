@@ -31,8 +31,7 @@ def cmd_branch_plan(args: argparse.Namespace, config: dict) -> None:
                     "action": "none",
                     "branch": None,
                     "note": (
-                        "HOTL run mode defers git lifecycle to HOTL execution. "
-                        "Phase 3 will unify."
+                        "HOTL run mode defers git lifecycle to HOTL execution. Phase 3 will unify."
                     ),
                     "pipeline_mode": pipeline_mode,
                 }

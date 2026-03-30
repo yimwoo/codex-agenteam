@@ -24,6 +24,7 @@ class ConfigFormat(Enum):
 @dataclass
 class TransformResult:
     """Result of a single transform."""
+
     config: dict
     changes: list[str] = field(default_factory=list)
     applied: bool = False
@@ -143,7 +144,7 @@ def _transform_normalize_final_verify(config: dict) -> TransformResult:
         config["final_verify"] = [fv]
         return TransformResult(
             config=config,
-            changes=[f"Normalized final_verify: \"{fv}\" -> [\"{fv}\"]"],
+            changes=[f'Normalized final_verify: "{fv}" -> ["{fv}"]'],
             applied=True,
         )
     return TransformResult(config=config)
@@ -173,7 +174,7 @@ def migrate_config(config: dict) -> tuple[dict, list[str]]:
     if old_version != "2":
         current = copy.deepcopy(current)
         current["version"] = "2"
-        all_changes.append(f"Bumped version: \"{old_version}\" -> \"2\"")
+        all_changes.append(f'Bumped version: "{old_version}" -> "2"')
 
     return current, all_changes
 
@@ -199,9 +200,7 @@ def cmd_migrate(args) -> None:
 
     # Find and load config
     try:
-        config_path = find_config(
-            args.config if hasattr(args, "config") and args.config else None
-        )
+        config_path = find_config(args.config if hasattr(args, "config") and args.config else None)
     except FileNotFoundError as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
@@ -226,10 +225,15 @@ def cmd_migrate(args) -> None:
     validation = validate_schema(migrated)
     if not validation.valid:
         error_msgs = [d.message for d in validation.errors]
-        print(json.dumps({
-            "error": "Migrated config failed validation",
-            "validation_errors": error_msgs,
-        }), file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "error": "Migrated config failed validation",
+                    "validation_errors": error_msgs,
+                }
+            ),
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Determine target path
@@ -239,10 +243,15 @@ def cmd_migrate(args) -> None:
         target_path = target_dir / "config.yaml"
         # Check conflict
         if target_path.exists():
-            print(json.dumps({
-                "error": f"Both {config_path} and {target_path} exist. "
-                "Resolve manually by removing one before migrating."
-            }), file=sys.stderr)
+            print(
+                json.dumps(
+                    {
+                        "error": f"Both {config_path} and {target_path} exist. "
+                        "Resolve manually by removing one before migrating."
+                    }
+                ),
+                file=sys.stderr,
+            )
             sys.exit(1)
     else:
         target_path = config_path

@@ -4,6 +4,7 @@
 Preserves the CLI contract: python3 runtime/agenteam_rt.py <command>
 Dependency guards ensure missing PyYAML/toml produce JSON errors, not tracebacks.
 """
+
 import json
 import sys
 

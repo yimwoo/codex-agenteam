@@ -70,10 +70,7 @@ def partition_writer_groups(
             groups.append([wname])
             group_scopes.append(set(w_scope))
 
-    result = [
-        {"group": i + 1, "roles": grp, "parallel": True}
-        for i, grp in enumerate(groups)
-    ]
+    result = [{"group": i + 1, "roles": grp, "parallel": True} for i, grp in enumerate(groups)]
     return result, read_only
 
 
@@ -112,17 +109,21 @@ def cmd_dispatch(args, config: dict) -> None:
         for wg in writer_groups:
             role_entries = []
             for rname in wg["roles"]:
-                role_entries.append({
-                    "role": rname,
-                    "agent": f".codex/agents/{rname}.toml",
-                    "mode": "write",
-                    "task": task,
-                })
-            groups_out.append({
-                "group": wg["group"],
-                "roles": role_entries,
-                "parallel": True,
-            })
+                role_entries.append(
+                    {
+                        "role": rname,
+                        "agent": f".codex/agents/{rname}.toml",
+                        "mode": "write",
+                        "task": task,
+                    }
+                )
+            groups_out.append(
+                {
+                    "group": wg["group"],
+                    "roles": role_entries,
+                    "parallel": True,
+                }
+            )
 
         plan = {
             "stage": stage_name,
@@ -137,11 +138,7 @@ def cmd_dispatch(args, config: dict) -> None:
 
     # --- Flat dispatch (branch / worktree) ---
     # Map isolation to write_mode for dispatch logic
-    write_mode = (
-        "serial"
-        if isolation_mode == "branch"
-        else "worktree"
-    )
+    write_mode = "serial" if isolation_mode == "branch" else "worktree"
 
     # Load current state for write locks
     state = None

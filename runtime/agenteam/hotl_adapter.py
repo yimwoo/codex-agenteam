@@ -15,18 +15,14 @@ HOTL_SKILL_MAP: dict[str, str] = {
 
 # Injection text for each skill when eligible.
 INJECT_TEXT: dict[str, str] = {
-    "tdd": (
-        "Use TDD workflow: invoke the hotl:tdd skill"
-        " before writing implementation code."
-    ),
+    "tdd": ("Use TDD workflow: invoke the hotl:tdd skill before writing implementation code."),
     "systematic-debugging": (
         "Use systematic debugging: invoke the"
         " hotl:systematic-debugging skill"
         " before proposing fixes."
     ),
     "code-review": (
-        "Use HOTL code review: invoke the"
-        " hotl:code-review skill for structured review."
+        "Use HOTL code review: invoke the hotl:code-review skill for structured review."
     ),
 }
 
@@ -58,9 +54,7 @@ def _check_eligibility(
         if role_name == "dev" and stage_name == "implement":
             return True, "role is dev, stage is implement"
         return False, (
-            f"requires role=dev and stage=implement"
-            f" (got role={role_name},"
-            f" stage={stage_name})"
+            f"requires role=dev and stage=implement (got role={role_name}, stage={stage_name})"
         )
 
     if skill == "systematic-debugging":
@@ -76,9 +70,7 @@ def _check_eligibility(
         if role_name == "reviewer" and stage_name == "review":
             return True, "role is reviewer, stage is review"
         return False, (
-            f"requires role=reviewer and stage=review"
-            f" (got role={role_name},"
-            f" stage={stage_name})"
+            f"requires role=reviewer and stage=review (got role={role_name}, stage={stage_name})"
         )
 
     return False, f"unknown skill '{skill}'"
@@ -115,17 +107,21 @@ def resolve_eligible_skills(
     for skill in configured_skills:
         is_eligible, reason = _check_eligibility(skill, role_name, stage_name, stage_status)
         if is_eligible:
-            eligible.append({
-                "skill": skill,
-                "hotl_skill": HOTL_SKILL_MAP[skill],
-                "inject": INJECT_TEXT[skill],
-            })
+            eligible.append(
+                {
+                    "skill": skill,
+                    "hotl_skill": HOTL_SKILL_MAP[skill],
+                    "inject": INJECT_TEXT[skill],
+                }
+            )
         else:
-            not_eligible.append({
-                "skill": skill,
-                "hotl_skill": HOTL_SKILL_MAP[skill],
-                "reason": reason,
-            })
+            not_eligible.append(
+                {
+                    "skill": skill,
+                    "hotl_skill": HOTL_SKILL_MAP[skill],
+                    "reason": reason,
+                }
+            )
 
     return {
         "hotl_available": hotl_is_available,

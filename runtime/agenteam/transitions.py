@@ -59,10 +59,13 @@ def transition(run_id: str, stage: str, to_status: str) -> dict:
     valid_targets = VALID_TRANSITIONS.get(mapped, set())
     if to_status not in valid_targets:
         print(
-            json.dumps({
-                "error": f"Invalid transition: '{current}' -> '{to_status}' for stage '{stage}'",
-                "valid_targets": sorted(valid_targets),
-            }),
+            json.dumps(
+                {
+                    "error": f"Invalid transition: '{current}' -> "
+                    f"'{to_status}' for stage '{stage}'",
+                    "valid_targets": sorted(valid_targets),
+                }
+            ),
             file=sys.stderr,
         )
         sys.exit(1)

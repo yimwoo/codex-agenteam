@@ -276,12 +276,16 @@ def cmd_record_verify(args, config: dict) -> None:
         event_data["rework_stage"] = rework_stage
     append_event(run_id, "stage_verified", stage_name, event_data)
 
-    print(json.dumps({
-        "recorded": True,
-        "stage": stage_name,
-        "attempt": attempt_num,
-        "result": result_val,
-    }))
+    print(
+        json.dumps(
+            {
+                "recorded": True,
+                "stage": stage_name,
+                "attempt": attempt_num,
+                "result": result_val,
+            }
+        )
+    )
 
 
 def cmd_final_verify_plan(args, config: dict) -> None:

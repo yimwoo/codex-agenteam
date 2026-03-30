@@ -23,8 +23,14 @@ VALID_GATE_TYPES = {"auto", "human", "reviewer", "qa"}
 VALID_FINAL_VERIFY_POLICIES = {"block", "warn"}
 VALID_REASONING_EFFORT = {"low", "medium", "high"}
 KNOWN_TOP_LEVEL_KEYS = {
-    "version", "isolation", "pipeline", "roles", "team",
-    "final_verify", "final_verify_policy", "final_verify_max_retries",
+    "version",
+    "isolation",
+    "pipeline",
+    "roles",
+    "team",
+    "final_verify",
+    "final_verify_policy",
+    "final_verify_max_retries",
 }
 
 # Map legacy write mode values to new isolation schema

@@ -111,12 +111,14 @@ def cmd_resume_detect(args) -> None:
             if not _is_stale(last_update):
                 continue
 
-            resumable.append({
-                "run_id": state.get("run_id", f.stem),
-                "task": state.get("task", ""),
-                "stage": state.get("current_stage", ""),
-                "last_update": last_update,
-            })
+            resumable.append(
+                {
+                    "run_id": state.get("run_id", f.stem),
+                    "task": state.get("task", ""),
+                    "stage": state.get("current_stage", ""),
+                    "last_update": last_update,
+                }
+            )
 
     print(json.dumps({"resumable_runs": resumable}))
 
@@ -191,7 +193,8 @@ def cmd_resume_plan(args, config: dict) -> None:
 
     completed_stages = [n for n in stage_order if stages.get(n, {}).get("status") == "completed"]
     remaining_stages = [
-        n for n in stage_order
+        n
+        for n in stage_order
         if n not in completed_stages and (not interrupted_stage or n != interrupted_stage["name"])
     ]
 

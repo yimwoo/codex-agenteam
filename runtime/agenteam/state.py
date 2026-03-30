@@ -269,11 +269,15 @@ def cmd_stage_baseline(args, config: dict) -> None:
         with open(state_path, "w") as f:
             json.dump(state, f, indent=2)
 
-        print(json.dumps({
-            "stage": stage_name,
-            "baseline": sha,
-            "action": "capture",
-        }))
+        print(
+            json.dumps(
+                {
+                    "stage": stage_name,
+                    "baseline": sha,
+                    "action": "capture",
+                }
+            )
+        )
 
     elif action == "rollback":
         baseline = stage_state.get("baseline")
@@ -288,21 +292,29 @@ def cmd_stage_baseline(args, config: dict) -> None:
         _, isolation_mode = resolve_team_config(config)
 
         if isolation_mode == "none":
-            print(json.dumps({
-                "stage": stage_name,
-                "baseline": baseline,
-                "action": "rollback",
-                "allowed": False,
-                "reason": "Rollback disabled in isolation:none -- "
-                "would affect user's branch directly",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "stage": stage_name,
+                        "baseline": baseline,
+                        "action": "rollback",
+                        "allowed": False,
+                        "reason": "Rollback disabled in isolation:none -- "
+                        "would affect user's branch directly",
+                    }
+                )
+            )
         else:
-            print(json.dumps({
-                "stage": stage_name,
-                "baseline": baseline,
-                "action": "rollback",
-                "allowed": True,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "stage": stage_name,
+                        "baseline": baseline,
+                        "action": "rollback",
+                        "allowed": True,
+                    }
+                )
+            )
 
     else:
         print(

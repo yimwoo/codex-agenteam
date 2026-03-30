@@ -329,9 +329,12 @@ class TestInitAndState:
         """Run IDs with path traversal characters are rejected."""
         make_config(tmp_path)
         r = run_rt(
-            "dispatch", "implement",
-            "--run-id", "../../etc/passwd",
-            "--task", "test",
+            "dispatch",
+            "implement",
+            "--run-id",
+            "../../etc/passwd",
+            "--task",
+            "test",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -344,9 +347,12 @@ class TestInitAndState:
         assert r.returncode == 0
         run_id = json.loads(r.stdout)["run_id"]
         r = run_rt(
-            "dispatch", "implement",
-            "--run-id", run_id,
-            "--task", "test",
+            "dispatch",
+            "implement",
+            "--run-id",
+            run_id,
+            "--task",
+            "test",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -447,9 +453,9 @@ class TestDispatch:
             plan = json.loads(r.stdout)
 
             assert plan["stage"] == stage_name
-            assert (
-                plan["dispatch"] or plan["blocked"]
-            ), f"expected dispatch or blocked entries for stage {stage_name}"
+            assert plan["dispatch"] or plan["blocked"], (
+                f"expected dispatch or blocked entries for stage {stage_name}"
+            )
 
             stage_dispatch_counts[stage_name] = len(plan["dispatch"])
             for entry in plan["dispatch"]:
@@ -1560,8 +1566,13 @@ class TestVerifyPlan:
         """Create a config with optional verify fields on stages."""
         if stages is None:
             stages = [
-                {"name": "implement", "roles": ["dev"], "gate": "auto",
-                 "verify": "python3 -m pytest tests/ -v", "max_retries": 2},
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": "python3 -m pytest tests/ -v",
+                    "max_retries": 2,
+                },
                 {"name": "design", "roles": ["architect"], "gate": "human"},
             ]
         config = {
@@ -1665,8 +1676,13 @@ class TestRecordVerify:
             "version": "1",
             "pipeline": {
                 "stages": [
-                    {"name": "implement", "roles": ["dev"], "gate": "auto",
-                     "verify": "python3 -m pytest -v", "max_retries": 2},
+                    {
+                        "name": "implement",
+                        "roles": ["dev"],
+                        "gate": "auto",
+                        "verify": "python3 -m pytest -v",
+                        "max_retries": 2,
+                    },
                     {"name": "test", "roles": ["qa"], "gate": "auto"},
                 ]
             },
@@ -1682,9 +1698,15 @@ class TestRecordVerify:
         """Recording a pass result persists in state."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "implement", "--result", "pass",
-            "--output", "all tests passed",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--result",
+            "pass",
+            "--output",
+            "all tests passed",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1706,9 +1728,15 @@ class TestRecordVerify:
         """Recording a fail result persists in state."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "implement", "--result", "fail",
-            "--output", "2 tests failed",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--result",
+            "fail",
+            "--output",
+            "2 tests failed",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1725,14 +1753,24 @@ class TestRecordVerify:
         run_id = self._setup_run(tmp_path)
         # First attempt: fail
         run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "implement", "--result", "fail",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--result",
+            "fail",
             cwd=str(tmp_path),
         )
         # Second attempt: pass
         r = run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "implement", "--result", "pass",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--result",
+            "pass",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1753,8 +1791,13 @@ class TestRecordVerify:
         """Recording verify for a stage not in state returns error."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "nonexistent", "--result", "pass",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "nonexistent",
+            "--result",
+            "pass",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -1764,8 +1807,13 @@ class TestRecordVerify:
         """Recording verify for a nonexistent run returns error."""
         self._setup_run(tmp_path)
         r = run_rt(
-            "record-verify", "--run-id", "99991231T999999Z",
-            "--stage", "implement", "--result", "pass",
+            "record-verify",
+            "--run-id",
+            "99991231T999999Z",
+            "--stage",
+            "implement",
+            "--result",
+            "pass",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -1919,10 +1967,17 @@ class TestRecordGate:
         """Recording an approved gate persists in state."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-gate", "--run-id", run_id,
-            "--stage", "implement", "--gate-type", "reviewer",
-            "--result", "approved",
-            "--verdict", "PASS WITH WARNINGS: 2 WARN findings",
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--gate-type",
+            "reviewer",
+            "--result",
+            "approved",
+            "--verdict",
+            "PASS WITH WARNINGS: 2 WARN findings",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1945,10 +2000,17 @@ class TestRecordGate:
         """Recording a rejected gate persists in state."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-gate", "--run-id", run_id,
-            "--stage", "implement", "--gate-type", "reviewer",
-            "--result", "rejected",
-            "--verdict", "BLOCK: missing error handling",
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--gate-type",
+            "reviewer",
+            "--result",
+            "rejected",
+            "--verdict",
+            "BLOCK: missing error handling",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1962,9 +2024,15 @@ class TestRecordGate:
         """Human gate type does not set gate_agent."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-gate", "--run-id", run_id,
-            "--stage", "design", "--gate-type", "human",
-            "--result", "approved",
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "design",
+            "--gate-type",
+            "human",
+            "--result",
+            "approved",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -1981,9 +2049,15 @@ class TestRecordGate:
         """Recording a gate for a nonexistent stage returns error."""
         run_id = self._setup_run(tmp_path)
         r = run_rt(
-            "record-gate", "--run-id", run_id,
-            "--stage", "nonexistent", "--gate-type", "auto",
-            "--result", "approved",
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "nonexistent",
+            "--gate-type",
+            "auto",
+            "--result",
+            "approved",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -1993,9 +2067,15 @@ class TestRecordGate:
         """Recording a gate for a nonexistent run returns error."""
         self._setup_run(tmp_path)
         r = run_rt(
-            "record-gate", "--run-id", "99991231T999999Z",
-            "--stage", "implement", "--gate-type", "reviewer",
-            "--result", "approved",
+            "record-gate",
+            "--run-id",
+            "99991231T999999Z",
+            "--stage",
+            "implement",
+            "--gate-type",
+            "reviewer",
+            "--result",
+            "approved",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -2027,11 +2107,15 @@ class TestWriterGroups:
 
     def test_three_non_overlapping_writers_one_group(self, tmp_path):
         """Three writers with disjoint scopes should all land in one group."""
-        self._make_scoped_config(tmp_path, {
-            "alpha": {"can_write": True, "write_scope": ["src/**"]},
-            "beta": {"can_write": True, "write_scope": ["lib/**"]},
-            "gamma": {"can_write": True, "write_scope": ["docs/**"]},
-        }, ["alpha", "beta", "gamma"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "alpha": {"can_write": True, "write_scope": ["src/**"]},
+                "beta": {"can_write": True, "write_scope": ["lib/**"]},
+                "gamma": {"can_write": True, "write_scope": ["docs/**"]},
+            },
+            ["alpha", "beta", "gamma"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2044,10 +2128,14 @@ class TestWriterGroups:
 
     def test_two_overlapping_writers_two_groups(self, tmp_path):
         """Two writers sharing a scope pattern should be in separate groups."""
-        self._make_scoped_config(tmp_path, {
-            "alpha": {"can_write": True, "write_scope": ["src/**"]},
-            "beta": {"can_write": True, "write_scope": ["src/**", "lib/**"]},
-        }, ["alpha", "beta"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "alpha": {"can_write": True, "write_scope": ["src/**"]},
+                "beta": {"can_write": True, "write_scope": ["src/**", "lib/**"]},
+            },
+            ["alpha", "beta"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2058,11 +2146,15 @@ class TestWriterGroups:
 
     def test_mixed_overlapping_non_overlapping(self, tmp_path):
         """Mixed: alpha+gamma share no scopes, beta overlaps with alpha."""
-        self._make_scoped_config(tmp_path, {
-            "alpha": {"can_write": True, "write_scope": ["src/**"]},
-            "beta": {"can_write": True, "write_scope": ["src/**"]},
-            "gamma": {"can_write": True, "write_scope": ["docs/**"]},
-        }, ["alpha", "beta", "gamma"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "alpha": {"can_write": True, "write_scope": ["src/**"]},
+                "beta": {"can_write": True, "write_scope": ["src/**"]},
+                "gamma": {"can_write": True, "write_scope": ["docs/**"]},
+            },
+            ["alpha", "beta", "gamma"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2076,10 +2168,14 @@ class TestWriterGroups:
 
     def test_read_only_roles_in_read_only_list(self, tmp_path):
         """Read-only roles should appear in read_only, not in groups."""
-        self._make_scoped_config(tmp_path, {
-            "writer": {"can_write": True, "write_scope": ["src/**"]},
-            "reader": {"can_write": False, "write_scope": []},
-        }, ["writer", "reader"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "writer": {"can_write": True, "write_scope": ["src/**"]},
+                "reader": {"can_write": False, "write_scope": []},
+            },
+            ["writer", "reader"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2095,9 +2191,13 @@ class TestWriterGroups:
 
     def test_single_writer_one_group(self, tmp_path):
         """A single writer produces exactly one group."""
-        self._make_scoped_config(tmp_path, {
-            "solo": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["solo"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "solo": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["solo"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2107,10 +2207,14 @@ class TestWriterGroups:
 
     def test_no_writers_zero_groups(self, tmp_path):
         """Stage with only read-only roles produces zero groups."""
-        self._make_scoped_config(tmp_path, {
-            "reader_a": {"can_write": False},
-            "reader_b": {"can_write": False},
-        }, ["reader_a", "reader_b"])
+        self._make_scoped_config(
+            tmp_path,
+            {
+                "reader_a": {"can_write": False},
+                "reader_b": {"can_write": False},
+            },
+            ["reader_a", "reader_b"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2143,10 +2247,15 @@ class TestGroupedDispatch:
 
     def test_isolation_none_non_overlapping_returns_groups(self, tmp_path):
         """isolation:none with non-overlapping scopes returns groups key."""
-        self._make_config(tmp_path, "none", {
-            "w1": {"can_write": True, "write_scope": ["src/**"]},
-            "w2": {"can_write": True, "write_scope": ["lib/**"]},
-        }, ["w1", "w2"])
+        self._make_config(
+            tmp_path,
+            "none",
+            {
+                "w1": {"can_write": True, "write_scope": ["src/**"]},
+                "w2": {"can_write": True, "write_scope": ["lib/**"]},
+            },
+            ["w1", "w2"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2160,11 +2269,16 @@ class TestGroupedDispatch:
 
     def test_isolation_none_overlapping_returns_multiple_groups(self, tmp_path):
         """isolation:none with overlapping scopes returns multiple groups."""
-        self._make_config(tmp_path, "none", {
-            "w1": {"can_write": True, "write_scope": ["src/**"]},
-            "w2": {"can_write": True, "write_scope": ["src/**"]},
-            "w3": {"can_write": True, "write_scope": ["docs/**"]},
-        }, ["w1", "w2", "w3"])
+        self._make_config(
+            tmp_path,
+            "none",
+            {
+                "w1": {"can_write": True, "write_scope": ["src/**"]},
+                "w2": {"can_write": True, "write_scope": ["src/**"]},
+                "w3": {"can_write": True, "write_scope": ["docs/**"]},
+            },
+            ["w1", "w2", "w3"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2174,9 +2288,14 @@ class TestGroupedDispatch:
 
     def test_isolation_branch_returns_flat_dispatch(self, tmp_path):
         """isolation:branch returns flat dispatch list, no groups key."""
-        self._make_config(tmp_path, "branch", {
-            "w1": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["w1"])
+        self._make_config(
+            tmp_path,
+            "branch",
+            {
+                "w1": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["w1"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2187,9 +2306,14 @@ class TestGroupedDispatch:
 
     def test_isolation_worktree_returns_flat_dispatch(self, tmp_path):
         """isolation:worktree returns flat dispatch list, no groups key."""
-        self._make_config(tmp_path, "worktree", {
-            "w1": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["w1"])
+        self._make_config(
+            tmp_path,
+            "worktree",
+            {
+                "w1": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["w1"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2200,10 +2324,15 @@ class TestGroupedDispatch:
 
     def test_read_only_present_in_grouped_dispatch(self, tmp_path):
         """Read-only roles appear in read_only list of grouped dispatch."""
-        self._make_config(tmp_path, "none", {
-            "writer": {"can_write": True, "write_scope": ["src/**"]},
-            "auditor": {"can_write": False},
-        }, ["writer", "auditor"])
+        self._make_config(
+            tmp_path,
+            "none",
+            {
+                "writer": {"can_write": True, "write_scope": ["src/**"]},
+                "auditor": {"can_write": False},
+            },
+            ["writer", "auditor"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2213,10 +2342,15 @@ class TestGroupedDispatch:
 
     def test_group_roles_have_correct_agent_paths(self, tmp_path):
         """Each role entry in groups has the correct agent path and mode."""
-        self._make_config(tmp_path, "none", {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-            "qa": {"can_write": True, "write_scope": ["tests/**"]},
-        }, ["dev", "qa"])
+        self._make_config(
+            tmp_path,
+            "none",
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+                "qa": {"can_write": True, "write_scope": ["tests/**"]},
+            },
+            ["dev", "qa"],
+        )
 
         r = run_rt("dispatch", "build", "--task", "build it", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -2244,16 +2378,22 @@ class TestScopeAudit:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         # Initial commit (empty)
         subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
 
     @staticmethod
@@ -2261,7 +2401,10 @@ class TestScopeAudit:
         """Get HEAD sha."""
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=str(path), capture_output=True, text=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return r.stdout.strip()
 
@@ -2273,11 +2416,15 @@ class TestScopeAudit:
         fpath.write_text(content)
         subprocess.run(
             ["git", "add", str(filepath)],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "-m", f"add {filepath}"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
 
     @staticmethod
@@ -2299,16 +2446,23 @@ class TestScopeAudit:
         self._init_git_repo(tmp_path)
         baseline = self._get_head(tmp_path)
 
-        self._make_audit_config(tmp_path, {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["dev"])
+        self._make_audit_config(
+            tmp_path,
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["dev"],
+        )
 
         # Add a file within scope and commit
         self._commit_file(tmp_path, "src/main.py", "print('hello')")
 
         r = run_rt(
-            "scope-audit", "--stage", "build",
-            "--baseline", baseline,
+            "scope-audit",
+            "--stage",
+            "build",
+            "--baseline",
+            baseline,
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2323,16 +2477,23 @@ class TestScopeAudit:
         self._init_git_repo(tmp_path)
         baseline = self._get_head(tmp_path)
 
-        self._make_audit_config(tmp_path, {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["dev"])
+        self._make_audit_config(
+            tmp_path,
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["dev"],
+        )
 
         # Add a file outside scope
         self._commit_file(tmp_path, "config/settings.yaml", "key: val")
 
         r = run_rt(
-            "scope-audit", "--stage", "build",
-            "--baseline", baseline,
+            "scope-audit",
+            "--stage",
+            "build",
+            "--baseline",
+            baseline,
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2347,13 +2508,20 @@ class TestScopeAudit:
         self._init_git_repo(tmp_path)
         baseline = self._get_head(tmp_path)
 
-        self._make_audit_config(tmp_path, {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["dev"])
+        self._make_audit_config(
+            tmp_path,
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["dev"],
+        )
 
         r = run_rt(
-            "scope-audit", "--stage", "build",
-            "--baseline", baseline,
+            "scope-audit",
+            "--stage",
+            "build",
+            "--baseline",
+            baseline,
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2367,10 +2535,14 @@ class TestScopeAudit:
         self._init_git_repo(tmp_path)
         baseline = self._get_head(tmp_path)
 
-        self._make_audit_config(tmp_path, {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-            "qa": {"can_write": True, "write_scope": ["tests/**"]},
-        }, ["dev", "qa"])
+        self._make_audit_config(
+            tmp_path,
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+                "qa": {"can_write": True, "write_scope": ["tests/**"]},
+            },
+            ["dev", "qa"],
+        )
 
         # In-scope files
         self._commit_file(tmp_path, "src/app.py", "app code")
@@ -2379,8 +2551,11 @@ class TestScopeAudit:
         self._commit_file(tmp_path, "README.md", "# Readme")
 
         r = run_rt(
-            "scope-audit", "--stage", "build",
-            "--baseline", baseline,
+            "scope-audit",
+            "--stage",
+            "build",
+            "--baseline",
+            baseline,
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2395,9 +2570,13 @@ class TestScopeAudit:
         """Only changes after the baseline should be audited."""
         self._init_git_repo(tmp_path)
 
-        self._make_audit_config(tmp_path, {
-            "dev": {"can_write": True, "write_scope": ["src/**"]},
-        }, ["dev"])
+        self._make_audit_config(
+            tmp_path,
+            {
+                "dev": {"can_write": True, "write_scope": ["src/**"]},
+            },
+            ["dev"],
+        )
 
         # Commit an out-of-scope file BEFORE baseline
         self._commit_file(tmp_path, "config/old.yaml", "old config")
@@ -2407,8 +2586,11 @@ class TestScopeAudit:
         self._commit_file(tmp_path, "src/new.py", "new code")
 
         r = run_rt(
-            "scope-audit", "--stage", "build",
-            "--baseline", baseline,
+            "scope-audit",
+            "--stage",
+            "build",
+            "--baseline",
+            baseline,
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2467,11 +2649,21 @@ class TestCrossStageRework:
         """Create a config with rework_to on test stage."""
         if stages is None:
             stages = [
-                {"name": "implement", "roles": ["dev"], "gate": "auto",
-                 "verify": "python3 -m pytest -v", "max_retries": 2},
-                {"name": "test", "roles": ["qa"], "gate": "auto",
-                 "verify": "python3 -m pytest -v", "max_retries": 2,
-                 "rework_to": "implement"},
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": "python3 -m pytest -v",
+                    "max_retries": 2,
+                },
+                {
+                    "name": "test",
+                    "roles": ["qa"],
+                    "gate": "auto",
+                    "verify": "python3 -m pytest -v",
+                    "max_retries": 2,
+                    "rework_to": "implement",
+                },
             ]
         config = {
             "version": "1",
@@ -2511,10 +2703,17 @@ class TestCrossStageRework:
         run_id = json.loads(r_init.stdout)["run_id"]
 
         r = run_rt(
-            "record-verify", "--run-id", run_id,
-            "--stage", "test", "--result", "fail",
-            "--output", "2 tests failed",
-            "--rework-stage", "implement",
+            "record-verify",
+            "--run-id",
+            run_id,
+            "--stage",
+            "test",
+            "--result",
+            "fail",
+            "--output",
+            "2 tests failed",
+            "--rework-stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2530,9 +2729,14 @@ class TestCrossStageRework:
     def test_rework_to_nonexistent_stage_returns_error(self, tmp_path):
         """rework_to pointing to a nonexistent stage returns error."""
         stages = [
-            {"name": "test", "roles": ["qa"], "gate": "auto",
-             "verify": "python3 -m pytest -v", "max_retries": 2,
-             "rework_to": "nonexistent"},
+            {
+                "name": "test",
+                "roles": ["qa"],
+                "gate": "auto",
+                "verify": "python3 -m pytest -v",
+                "max_retries": 2,
+                "rework_to": "nonexistent",
+            },
         ]
         self._make_rework_config(tmp_path, stages=stages)
         r = run_rt("verify-plan", "test", cwd=str(tmp_path))
@@ -2554,15 +2758,21 @@ class TestStageBaseline:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
 
     @staticmethod
@@ -2570,7 +2780,10 @@ class TestStageBaseline:
         """Get HEAD sha."""
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=str(path), capture_output=True, text=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return r.stdout.strip()
 
@@ -2601,8 +2814,13 @@ class TestStageBaseline:
         run_id = json.loads(r_init.stdout)["run_id"]
 
         r = run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "capture",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "capture",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2627,15 +2845,25 @@ class TestStageBaseline:
 
         # Capture first
         run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "capture",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "capture",
             cwd=str(tmp_path),
         )
 
         # Rollback
         r = run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "rollback",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "rollback",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2655,15 +2883,25 @@ class TestStageBaseline:
 
         # Capture
         run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "capture",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "capture",
             cwd=str(tmp_path),
         )
 
         # Rollback should be disallowed
         r = run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "rollback",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "rollback",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2682,14 +2920,24 @@ class TestStageBaseline:
 
         # Capture
         run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "capture",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "capture",
             cwd=str(tmp_path),
         )
 
         r = run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "rollback",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "rollback",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -2706,8 +2954,13 @@ class TestStageBaseline:
         run_id = json.loads(r_init.stdout)["run_id"]
 
         r = run_rt(
-            "stage-baseline", "--run-id", run_id,
-            "--stage", "implement", "--action", "rollback",
+            "stage-baseline",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--action",
+            "rollback",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -2921,15 +3174,21 @@ class TestGateEval:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
 
     @staticmethod
@@ -2937,7 +3196,10 @@ class TestGateEval:
         """Get HEAD sha."""
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=str(path), capture_output=True, text=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return r.stdout.strip()
 
@@ -2949,11 +3211,15 @@ class TestGateEval:
         fpath.write_text(content)
         subprocess.run(
             ["git", "add", str(filepath)],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "commit", "-m", f"add {filepath}"],
-            cwd=str(path), capture_output=True, check=True,
+            cwd=str(path),
+            capture_output=True,
+            check=True,
         )
 
     @staticmethod
@@ -2996,17 +3262,18 @@ class TestGateEval:
 
     def test_max_files_changed_exceeded(self, tmp_path):
         """max_files_changed exceeded returns failed_criteria."""
-        run_id, _ = self._setup_run_with_baseline(
-            tmp_path, criteria={"max_files_changed": 1}
-        )
+        run_id, _ = self._setup_run_with_baseline(tmp_path, criteria={"max_files_changed": 1})
 
         # Create 2 files (exceeds max of 1)
         self._commit_file(tmp_path, "src/a.py", "a")
         self._commit_file(tmp_path, "src/b.py", "b")
 
         r = run_rt(
-            "gate-eval", "--run-id", run_id,
-            "--stage", "implement",
+            "gate-eval",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3018,16 +3285,17 @@ class TestGateEval:
 
     def test_scope_paths_violation(self, tmp_path):
         """scope_paths violation returns failed_criteria."""
-        run_id, _ = self._setup_run_with_baseline(
-            tmp_path, criteria={"scope_paths": ["src/**"]}
-        )
+        run_id, _ = self._setup_run_with_baseline(tmp_path, criteria={"scope_paths": ["src/**"]})
 
         # Create a file outside scope
         self._commit_file(tmp_path, "config/settings.yaml", "key: val")
 
         r = run_rt(
-            "gate-eval", "--run-id", run_id,
-            "--stage", "implement",
+            "gate-eval",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3038,16 +3306,17 @@ class TestGateEval:
 
     def test_requires_tests_with_no_test_files(self, tmp_path):
         """requires_tests with no test files returns failed_criteria."""
-        run_id, _ = self._setup_run_with_baseline(
-            tmp_path, criteria={"requires_tests": True}
-        )
+        run_id, _ = self._setup_run_with_baseline(tmp_path, criteria={"requires_tests": True})
 
         # Create a non-test file only
         self._commit_file(tmp_path, "src/main.py", "code")
 
         r = run_rt(
-            "gate-eval", "--run-id", run_id,
-            "--stage", "implement",
+            "gate-eval",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3059,11 +3328,12 @@ class TestGateEval:
     def test_all_criteria_met(self, tmp_path):
         """All criteria met returns passed:true."""
         run_id, _ = self._setup_run_with_baseline(
-            tmp_path, criteria={
+            tmp_path,
+            criteria={
                 "max_files_changed": 5,
                 "scope_paths": ["src/**", "tests/**"],
                 "requires_tests": True,
-            }
+            },
         )
 
         # Create files within scope including a test file
@@ -3071,8 +3341,11 @@ class TestGateEval:
         self._commit_file(tmp_path, "tests/test_app.py", "test code")
 
         r = run_rt(
-            "gate-eval", "--run-id", run_id,
-            "--stage", "implement",
+            "gate-eval",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3091,8 +3364,11 @@ class TestGateEval:
         self._commit_file(tmp_path, "src/anything.py", "stuff")
 
         r = run_rt(
-            "gate-eval", "--run-id", run_id,
-            "--stage", "implement",
+            "gate-eval",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3112,14 +3388,23 @@ class TestGateEval:
 
         # Record a criteria_override gate
         r = run_rt(
-            "record-gate", "--run-id", run_id,
-            "--stage", "implement",
-            "--gate-type", "criteria_override",
-            "--result", "approved",
-            "--verdict", "Criteria override: max_files_changed (23 > 15)",
-            "--criteria-failed", '["max_files_changed"]',
-            "--criteria-details", '{"max_files_changed": {"configured": 15, "actual": 23}}',
-            "--override-reason", "Bulk rename across 23 files",
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--gate-type",
+            "criteria_override",
+            "--result",
+            "approved",
+            "--verdict",
+            "Criteria override: max_files_changed (23 > 15)",
+            "--criteria-failed",
+            '["max_files_changed"]',
+            "--criteria-details",
+            '{"max_files_changed": {"configured": 15, "actual": 23}}',
+            "--override-reason",
+            "Bulk rename across 23 files",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3143,10 +3428,14 @@ class TestGateEval:
 class TestEventLog:
     def test_event_append_creates_jsonl(self, tmp_path):
         r = run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "run_started",
-            "--data", '{"task": "test task", "pipeline_mode": "standalone"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "run_started",
+            "--data",
+            '{"task": "test task", "pipeline_mode": "standalone"}',
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3166,9 +3455,12 @@ class TestEventLog:
 
     def test_event_append_validates_type(self, tmp_path):
         r = run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "invalid_type",
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "invalid_type",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -3176,10 +3468,14 @@ class TestEventLog:
 
     def test_event_append_validates_required_data(self, tmp_path):
         r = run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "run_started",
-            "--data", '{"task": "test"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "run_started",
+            "--data",
+            '{"task": "test"}',
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -3188,10 +3484,14 @@ class TestEventLog:
     def test_event_list_returns_events(self, tmp_path):
         for i in range(3):
             run_rt(
-                "event", "append",
-                "--run-id", "test-run",
-                "--type", "run_started",
-                "--data", json.dumps({"task": f"task-{i}", "pipeline_mode": "standalone"}),
+                "event",
+                "append",
+                "--run-id",
+                "test-run",
+                "--type",
+                "run_started",
+                "--data",
+                json.dumps({"task": f"task-{i}", "pipeline_mode": "standalone"}),
                 cwd=str(tmp_path),
             )
         r = run_rt("event", "list", "--run-id", "test-run", cwd=str(tmp_path))
@@ -3201,24 +3501,36 @@ class TestEventLog:
 
     def test_event_list_filters_by_type(self, tmp_path):
         run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "run_started",
-            "--data", '{"task": "t", "pipeline_mode": "standalone"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "run_started",
+            "--data",
+            '{"task": "t", "pipeline_mode": "standalone"}',
             cwd=str(tmp_path),
         )
         run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "stage_dispatched",
-            "--stage", "implement",
-            "--data", '{"roles": ["dev"], "isolation": "branch"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "stage_dispatched",
+            "--stage",
+            "implement",
+            "--data",
+            '{"roles": ["dev"], "isolation": "branch"}',
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "event", "list",
-            "--run-id", "test-run",
-            "--type", "run_started",
+            "event",
+            "list",
+            "--run-id",
+            "test-run",
+            "--type",
+            "run_started",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3228,25 +3540,38 @@ class TestEventLog:
 
     def test_event_list_filters_by_stage(self, tmp_path):
         run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "stage_dispatched",
-            "--stage", "implement",
-            "--data", '{"roles": ["dev"], "isolation": "branch"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "stage_dispatched",
+            "--stage",
+            "implement",
+            "--data",
+            '{"roles": ["dev"], "isolation": "branch"}',
             cwd=str(tmp_path),
         )
         run_rt(
-            "event", "append",
-            "--run-id", "test-run",
-            "--type", "stage_dispatched",
-            "--stage", "review",
-            "--data", '{"roles": ["reviewer"], "isolation": "branch"}',
+            "event",
+            "append",
+            "--run-id",
+            "test-run",
+            "--type",
+            "stage_dispatched",
+            "--stage",
+            "review",
+            "--data",
+            '{"roles": ["reviewer"], "isolation": "branch"}',
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "event", "list",
-            "--run-id", "test-run",
-            "--stage", "implement",
+            "event",
+            "list",
+            "--run-id",
+            "test-run",
+            "--stage",
+            "implement",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3257,16 +3582,23 @@ class TestEventLog:
     def test_event_list_last_n(self, tmp_path):
         for i in range(5):
             run_rt(
-                "event", "append",
-                "--run-id", "test-run",
-                "--type", "run_started",
-                "--data", json.dumps({"task": f"task-{i}", "pipeline_mode": "standalone"}),
+                "event",
+                "append",
+                "--run-id",
+                "test-run",
+                "--type",
+                "run_started",
+                "--data",
+                json.dumps({"task": f"task-{i}", "pipeline_mode": "standalone"}),
                 cwd=str(tmp_path),
             )
         r = run_rt(
-            "event", "list",
-            "--run-id", "test-run",
-            "--last", "2",
+            "event",
+            "list",
+            "--run-id",
+            "test-run",
+            "--last",
+            "2",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3277,8 +3609,10 @@ class TestEventLog:
 
     def test_event_list_empty_for_missing_file(self, tmp_path):
         r = run_rt(
-            "event", "list",
-            "--run-id", "nonexistent",
+            "event",
+            "list",
+            "--run-id",
+            "nonexistent",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3303,9 +3637,12 @@ class TestTransitions:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "transition",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--to", "dispatched",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3319,9 +3656,12 @@ class TestTransitions:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "transition",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--to", "completed",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "completed",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -3335,13 +3675,17 @@ class TestTransitions:
         old_update = old_state.get("last_update")
 
         import time
+
         time.sleep(0.01)
 
         r = run_rt(
             "transition",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--to", "dispatched",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3364,9 +3708,12 @@ class TestTransitions:
         # Should be able to transition to 'verifying' (valid from 'dispatched')
         r = run_rt(
             "transition",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--to", "verifying",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3378,9 +3725,12 @@ class TestTransitions:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "transition",
-            "--run-id", run_id,
-            "--stage", "nonexistent",
-            "--to", "dispatched",
+            "--run-id",
+            run_id,
+            "--stage",
+            "nonexistent",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -3389,13 +3739,23 @@ class TestTransitions:
     def test_dispatched_to_verifying(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3403,18 +3763,33 @@ class TestTransitions:
     def test_verifying_to_passed(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "passed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "passed",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3422,18 +3797,33 @@ class TestTransitions:
     def test_verifying_to_failed(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "failed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "failed",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3441,23 +3831,43 @@ class TestTransitions:
     def test_failed_to_dispatched(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "failed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "failed",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3465,23 +3875,43 @@ class TestTransitions:
     def test_passed_to_gated(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "passed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "passed",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "gated",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "gated",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3489,28 +3919,53 @@ class TestTransitions:
     def test_gated_to_completed(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "passed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "passed",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "gated",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "gated",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "completed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "completed",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3518,28 +3973,53 @@ class TestTransitions:
     def test_gated_to_rejected(self, tmp_path):
         run_id = self._init_run(tmp_path)
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "verifying",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "verifying",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "passed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "passed",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "gated",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "gated",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "rejected",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "rejected",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -3548,18 +4028,33 @@ class TestTransitions:
         run_id = self._init_run(tmp_path)
         # Fast-track: pending -> dispatched -> completed
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "completed",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "completed",
             cwd=str(tmp_path),
         )
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "implement", "--to", "dispatched",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
             cwd=str(tmp_path),
         )
         assert r.returncode != 0
@@ -3582,6 +4077,7 @@ class TestResume:
     def _make_stale(self, tmp_path, run_id, minutes_ago=15):
         """Set last_update to N minutes ago."""
         from datetime import datetime, timedelta, timezone
+
         state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
         with open(state_path) as f:
             state = json.load(f)
@@ -3655,6 +4151,7 @@ class TestResume:
 
     def test_resume_plan_verify_safe_from_config(self, tmp_path):
         import yaml
+
         make_config(tmp_path)
         config_path = tmp_path / "agenteam.yaml"
         with open(config_path) as f:
@@ -3710,9 +4207,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3731,9 +4231,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3752,9 +4255,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "review",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "review",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3772,9 +4278,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "review",
-            "--role", "reviewer",
+            "--run-id",
+            run_id,
+            "--stage",
+            "review",
+            "--role",
+            "reviewer",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3800,9 +4309,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3816,9 +4328,12 @@ class TestHotlAdapter:
         env = make_home_env(tmp_path)
         r = run_rt(
             "hotl-skills",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -3837,6 +4352,7 @@ class TestProfileValidation:
     def _make_config_with_profiles(self, tmp_path, profiles, extra_stages=None):
         """Helper: create config with pipeline.profiles."""
         import yaml
+
         with open(TEMPLATE) as f:
             config = yaml.safe_load(f)
         if "pipeline" not in config or not isinstance(config["pipeline"], dict):
@@ -3850,49 +4366,67 @@ class TestProfileValidation:
         return config_path
 
     def test_valid_profiles_accepted(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode == 0
 
     def test_unknown_stage_in_profile_rejected(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "bad": {"stages": ["nonexistent"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "bad": {"stages": ["nonexistent"]},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "unknown stage" in r.stderr
 
     def test_duplicate_stage_in_profile_rejected(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "bad": {"stages": ["implement", "implement"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "bad": {"stages": ["implement", "implement"]},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "duplicate stage" in r.stderr
 
     def test_empty_stages_in_profile_rejected(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "bad": {"stages": []},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "bad": {"stages": []},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "non-empty list" in r.stderr
 
     def test_hints_must_be_list_of_strings(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "bad": {"stages": ["implement"], "hints": 42},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "bad": {"stages": ["implement"], "hints": 42},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "hints" in r.stderr
 
     def test_rework_to_outside_profile_rejected(self, tmp_path):
         # test stage has rework_to: implement, so a profile with test but not implement should fail
-        self._make_config_with_profiles(tmp_path, {
-            "bad": {"stages": ["test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "bad": {"stages": ["test"]},
+            },
+        )
         r = run_rt("roles", "list", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "rework_to" in r.stderr
@@ -3911,6 +4445,7 @@ class TestProfileValidation:
 class TestProfileInit:
     def _make_config_with_profiles(self, tmp_path, profiles):
         import yaml
+
         with open(TEMPLATE) as f:
             config = yaml.safe_load(f)
         if "pipeline" not in config or not isinstance(config["pipeline"], dict):
@@ -3922,9 +4457,12 @@ class TestProfileInit:
         return config_path
 
     def test_init_with_profile_snapshots_subset(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "quick", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
@@ -3933,9 +4471,12 @@ class TestProfileInit:
         assert set(state["stages"].keys()) == {"implement", "test"}
 
     def test_init_without_profile_uses_all_stages(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
@@ -3950,18 +4491,24 @@ class TestProfileInit:
         assert "Unknown profile" in r.stderr
 
     def test_init_full_profile_implicit(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "full", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
         assert len(state["stage_order"]) == 7
 
     def test_init_snapshots_full_stage_config(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "quick", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
@@ -3974,9 +4521,12 @@ class TestProfileInit:
 
     def test_init_preserves_pipeline_order(self, tmp_path):
         # Profile lists stages out of pipeline order
-        self._make_config_with_profiles(tmp_path, {
-            "reversed": {"stages": ["test", "implement"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "reversed": {"stages": ["test", "implement"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "reversed", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
@@ -3984,9 +4534,12 @@ class TestProfileInit:
         assert state["stage_order"] == ["implement", "test"]
 
     def test_init_profile_stores_stage_order(self, tmp_path):
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "quick", cwd=str(tmp_path))
         assert r.returncode == 0
         state = json.loads(r.stdout)
@@ -4002,6 +4555,7 @@ class TestProfileInit:
 class TestResolveStagesForRun:
     def _make_config_with_profiles(self, tmp_path, profiles):
         import yaml
+
         with open(TEMPLATE) as f:
             config = yaml.safe_load(f)
         if "pipeline" not in config or not isinstance(config["pipeline"], dict):
@@ -4014,9 +4568,12 @@ class TestResolveStagesForRun:
 
     def test_with_run_id_returns_state_stages(self, tmp_path):
         """Init with quick profile, then dispatch should only see implement/test."""
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "quick", cwd=str(tmp_path))
         assert r.returncode == 0
         run_id = json.loads(r.stdout)["run_id"]
@@ -4032,9 +4589,12 @@ class TestResolveStagesForRun:
 
     def test_without_run_id_returns_config_stages(self, tmp_path):
         """Dispatch without run-id should use all config stages."""
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         # dispatch without --run-id should still find research (from config)
         r = run_rt("dispatch", "research", "--task", "test", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -4042,9 +4602,13 @@ class TestResolveStagesForRun:
     def test_state_stages_immune_to_config_change(self, tmp_path):
         """After init, changing config should not affect run-scoped commands."""
         import yaml
-        self._make_config_with_profiles(tmp_path, {
-            "quick": {"stages": ["implement", "test"]},
-        })
+
+        self._make_config_with_profiles(
+            tmp_path,
+            {
+                "quick": {"stages": ["implement", "test"]},
+            },
+        )
         r = run_rt("init", "--task", "test", "--profile", "quick", cwd=str(tmp_path))
         assert r.returncode == 0
         run_id = json.loads(r.stdout)["run_id"]
@@ -4090,9 +4654,11 @@ class TestSchemaValidation:
         config = {
             "version": "2",
             "isolation": "branch",
-            "pipeline": {"stages": [
-                {"name": "implement", "roles": ["dev"], "gate": "auto"},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {"name": "implement", "roles": ["dev"], "gate": "auto"},
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode == 0
@@ -4126,10 +4692,12 @@ class TestSchemaValidation:
         """E011: duplicate stage names in pipeline.stages."""
         config = {
             "version": "1",
-            "pipeline": {"stages": [
-                {"name": "test", "roles": ["qa"], "gate": "auto"},
-                {"name": "test", "roles": ["dev"], "gate": "auto"},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {"name": "test", "roles": ["qa"], "gate": "auto"},
+                    {"name": "test", "roles": ["dev"], "gate": "auto"},
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode != 0
@@ -4140,10 +4708,16 @@ class TestSchemaValidation:
         """E008: rework_to references non-existent stage."""
         config = {
             "version": "1",
-            "pipeline": {"stages": [
-                {"name": "implement", "roles": ["dev"], "gate": "auto",
-                 "rework_to": "nonexistent"},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {
+                        "name": "implement",
+                        "roles": ["dev"],
+                        "gate": "auto",
+                        "rework_to": "nonexistent",
+                    },
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode != 0
@@ -4168,9 +4742,11 @@ class TestSchemaValidation:
         """E007: stage references role not in resolved roles."""
         config = {
             "version": "1",
-            "pipeline": {"stages": [
-                {"name": "implement", "roles": ["nonexistent_role"], "gate": "auto"},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {"name": "implement", "roles": ["nonexistent_role"], "gate": "auto"},
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode != 0
@@ -4220,9 +4796,11 @@ class TestSchemaValidation:
         """E015: invalid gate value."""
         config = {
             "version": "1",
-            "pipeline": {"stages": [
-                {"name": "test", "roles": ["qa"], "gate": "manual"},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {"name": "test", "roles": ["qa"], "gate": "manual"},
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode != 0
@@ -4233,9 +4811,11 @@ class TestSchemaValidation:
         """E016: max_retries must be non-negative integer."""
         config = {
             "version": "1",
-            "pipeline": {"stages": [
-                {"name": "test", "roles": ["qa"], "gate": "auto", "max_retries": -1},
-            ]},
+            "pipeline": {
+                "stages": [
+                    {"name": "test", "roles": ["qa"], "gate": "auto", "max_retries": -1},
+                ]
+            },
         }
         r = self._validate(tmp_path, config)
         assert r.returncode != 0
@@ -4425,9 +5005,12 @@ class TestMigration:
 
     def test_migrate_hotl_pipeline(self, tmp_path):
         """team.pipeline: hotl -> pipeline: hotl."""
-        self._make_legacy_config(tmp_path, overrides={
-            "team": {"pipeline": "hotl", "parallel_writes": {"mode": "serial"}},
-        })
+        self._make_legacy_config(
+            tmp_path,
+            overrides={
+                "team": {"pipeline": "hotl", "parallel_writes": {"mode": "serial"}},
+            },
+        )
         r = run_rt("migrate", cwd=str(tmp_path))
         assert r.returncode == 0
         migrated_path = tmp_path / ".agenteam" / "config.yaml"
@@ -4447,9 +5030,12 @@ class TestMigration:
 
     def test_migrate_worktree_isolation(self, tmp_path):
         """team.parallel_writes.mode: worktree -> isolation: worktree."""
-        self._make_legacy_config(tmp_path, overrides={
-            "team": {"pipeline": "standalone", "parallel_writes": {"mode": "worktree"}},
-        })
+        self._make_legacy_config(
+            tmp_path,
+            overrides={
+                "team": {"pipeline": "standalone", "parallel_writes": {"mode": "worktree"}},
+            },
+        )
         r = run_rt("migrate", cwd=str(tmp_path))
         assert r.returncode == 0
         migrated_path = tmp_path / ".agenteam" / "config.yaml"
@@ -4498,4 +5084,5 @@ class TestMigration:
         assert ".bak-" in backup
         # Pattern: .bak-YYYYMMDDTHHMMSSZ
         import re
+
         assert re.search(r"\.bak-\d{8}T\d{6}Z", backup)

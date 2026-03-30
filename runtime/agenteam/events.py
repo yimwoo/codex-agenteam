@@ -39,10 +39,11 @@ def append_event(
     """
     if event_type not in EVENT_TYPES:
         print(
-            json.dumps({
-                "error": f"Unknown event type '{event_type}'."
-                f" Valid: {sorted(EVENT_TYPES)}",
-            }),
+            json.dumps(
+                {
+                    "error": f"Unknown event type '{event_type}'. Valid: {sorted(EVENT_TYPES)}",
+                }
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -51,9 +52,11 @@ def append_event(
     missing = [f for f in required if f not in data]
     if missing:
         print(
-            json.dumps({
-                "error": f"Missing required data fields for '{event_type}': {missing}",
-            }),
+            json.dumps(
+                {
+                    "error": f"Missing required data fields for '{event_type}': {missing}",
+                }
+            ),
             file=sys.stderr,
         )
         sys.exit(1)

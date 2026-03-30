@@ -50,17 +50,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     # validate
     p_validate = sub.add_parser("validate", help="Validate config without creating run state")
-    p_validate.add_argument("--strict", action="store_true", default=False,
-                            help="Treat warnings as errors (exit 1 on warnings)")
     p_validate.add_argument(
-        "--format", choices=["summary", "diagnostics"], default="summary",
+        "--strict",
+        action="store_true",
+        default=False,
+        help="Treat warnings as errors (exit 1 on warnings)",
+    )
+    p_validate.add_argument(
+        "--format",
+        choices=["summary", "diagnostics"],
+        default="summary",
         help="Output format: summary or diagnostics (full structured)",
     )
 
     # migrate
     p_migrate = sub.add_parser("migrate", help="Migrate legacy config to canonical format")
-    p_migrate.add_argument("--dry-run", dest="dry_run", action="store_true", default=False,
-                           help="Show what would change without writing files")
+    p_migrate.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        default=False,
+        help="Show what would change without writing files",
+    )
 
     # dispatch
     p_dispatch = sub.add_parser("dispatch", help="Generate dispatch plan for a stage")
