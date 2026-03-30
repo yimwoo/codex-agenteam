@@ -41,7 +41,7 @@ Use `@Architect`, `@Dev`, `@Reviewer`, and other roles for focused work after se
 Team-level:
 
 ```
-@ATeam let's add user authentication
+@ATeam refactor this codebase to be more maintainable
 @ATeam show team status
 ```
 
@@ -71,7 +71,7 @@ From a project root:
 
 ```
 $ateam:init
-$ateam:run "add user authentication"
+$ateam:run "refactor this codebase to be more maintainable"
 $ateam:status
 $ateam:add-member
 $ateam:generate
@@ -91,11 +91,11 @@ After that, use `$ateam:run` to start work and `$ateam:status` to inspect the cu
 4. Start with a real task:
 
 ```
-@ATeam let's add rate limiting to the API
+@ATeam build a REST API for managing tasks
 ```
 
 ```bash
-$ateam:run "add rate limiting to the API"
+$ateam:run "build a REST API for managing tasks"
 ```
 
 5. Customize roles, models, and pipeline behavior in `.agenteam/config.yaml` when ready.
@@ -114,7 +114,7 @@ In the Codex App, `@` any team member directly:
 @Qa add integration tests for the cache
 @Reviewer review the caching implementation
 @Pm prioritize the backlog for next sprint
-@Researcher what are others doing for rate limiting?
+@Researcher what are the best practices for error handling in this stack?
 ```
 
 ### Team Operations via @ATeam
@@ -122,7 +122,7 @@ In the Codex App, `@` any team member directly:
 Use `@ATeam` for team-level operations:
 
 ```
-@ATeam let's add rate limiting to the API
+@ATeam write tests for the untested parts of this project
 @ATeam show team status
 @ATeam add a security auditor that focuses on OWASP top 10
 @ATeam add a performance engineer to profile API response times

@@ -32,7 +32,7 @@
     "capabilities": ["Interactive", "Read", "Write"],
     "defaultPrompt": [
       "Show my team",
-      "Let's add user authentication",
+      "Refactor this codebase to be more maintainable",
       "Add a security auditor to the team"
     ],
     "websiteURL": "https://github.com/yimwoo/codex-agenteam",
