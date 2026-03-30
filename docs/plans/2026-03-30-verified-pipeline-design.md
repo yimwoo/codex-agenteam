@@ -271,15 +271,20 @@ after processing the gate agent's output; they never edit state files directly.
 agenteam_rt.py final-verify-plan --run-id <id>
 ```
 
-Returns JSON:
+Returns JSON (includes `cwd` -- same isolated workspace as stage verification):
 ```json
 {
   "commands": ["python3 -m pytest -v", "ruff check ."],
   "policy": "block",
   "max_retries": 1,
-  "source": "config"
+  "source": "config",
+  "cwd": "/path/to/project"
 }
 ```
+
+`cwd` follows the same rules as `verify-plan`: project root for branch mode,
+worktree path for worktree mode. The run skill must pass `--cwd` for every
+final-verify command.
 
 ## Shared Script: `scripts/verify-stage.sh`
 
@@ -334,11 +339,15 @@ On non-zero exit:
        files. If verify output references test files -> qa. If source files -> dev.
        If unclear or multiple scopes -> re-dispatch ALL writing roles from the stage.
        Read-only roles (e.g., reviewer) are never re-dispatched for repair.
+     * All-read-only stage (e.g., design with only architect reading): no legal
+       repair role exists. Fall through to step 7 immediately (fail-fast to human).
+       Validation rule: `validate_config` should warn if a stage has both
+       `max_retries > 0` and no writing roles, since retries can never succeed.
    - Re-dispatch repair role(s) with the failure output as context
    - The agent sees what failed and attempts to fix it
    - Go to step 3 (re-verify)
 
-7. If failed and attempts >= max_retries:
+7. If failed and attempts >= max_retries (or no legal repair role):
    - Log: "Verification failed after N attempts. Pipeline stopped."
    - Mark stage as "failed" in state
    - Show failure output to user
@@ -351,7 +360,8 @@ On non-zero exit:
 1. Get final verify plan:
    agenteam_rt.py final-verify-plan --run-id <id>
 
-2. Run each command in sequence via verify-stage.sh
+2. Run each command in sequence via verify-stage.sh --cwd <cwd from plan>
+   (same isolated workspace as stage verification -- mandatory)
 
 3. If all pass: print success summary.
 
