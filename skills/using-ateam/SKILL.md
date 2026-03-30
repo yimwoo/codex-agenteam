@@ -41,7 +41,12 @@ Then decide what to do next:
 If Step 1 already handled a first-time team-setup request, do not invoke
 `$ateam:init` afterward.
 
-If you are showing the team, use:
+If you are showing the team, use the roster block below, followed by
+starter examples. Choose examples based on a lightweight project check:
+
+**Detection:** Glob for common source files (`*.py`, `*.js`, `*.ts`,
+`*.go`, `*.java`, `*.rs`, `*.rb`, `*.swift`, `*.kt`). If any exist,
+use "existing project" examples. Otherwise use "new project" examples.
 
 ```
 Your team is ready! Talk to any role directly:
@@ -49,11 +54,33 @@ Your team is ready! Talk to any role directly:
   @Architect    -- system design, risk analysis
   @Pm           -- strategy, priorities, specs
   @Researcher   -- web, GitHub, docs, community
-  @Dev  -- write production code
-  @Qa  -- unit and integration tests
+  @Dev          -- write production code
+  @Qa           -- unit and integration tests
   @Reviewer     -- correctness, security, regressions
 
 Or use @ATeam to run the full pipeline or manage the team.
+```
+
+**For existing projects** (source files detected), append:
+
+```
+Try these to get started:
+
+  @Reviewer review this codebase for security concerns
+  @Researcher what are the best practices for error handling in this stack?
+  @ATeam add comprehensive test coverage
+  @ATeam add a security auditor that focuses on OWASP top 10
+```
+
+**For new/empty projects** (no source files), append:
+
+```
+Try these to get started:
+
+  @Architect design a REST API for a task management app
+  @Researcher what's the best tech stack for a CLI tool in Python?
+  @ATeam build a simple todo app with tests
+  @ATeam add a docs writer to maintain README and API docs
 ```
 
 ## Step 2: Route to a Skill

@@ -88,8 +88,34 @@ If HOTL is available and pipeline is not already set to `hotl`:
 Show:
 - Config file location
 - Generated agent files
-- Available skills (`$ateam:run`, `$ateam:assign`, etc.)
-- Next step suggestion: "Run `$ateam:run` to start a task with your team."
+- Team roster (same format as using-ateam skill)
+- Starter examples based on project type:
+
+**Detection:** Glob for common source files (`*.py`, `*.js`, `*.ts`,
+`*.go`, `*.java`, `*.rs`, `*.rb`, `*.swift`, `*.kt`). If any exist,
+use "existing project" examples. Otherwise use "new project" examples.
+
+**For existing projects** (source files detected):
+
+```
+Try these to get started:
+
+  @Reviewer review this codebase for security concerns
+  @Researcher what are the best practices for error handling in this stack?
+  @ATeam add comprehensive test coverage
+  @ATeam add a security auditor that focuses on OWASP top 10
+```
+
+**For new/empty projects** (no source files):
+
+```
+Try these to get started:
+
+  @Architect design a REST API for a task management app
+  @Researcher what's the best tech stack for a CLI tool in Python?
+  @ATeam build a simple todo app with tests
+  @ATeam add a docs writer to maintain README and API docs
+```
 
 ## Runtime Path Resolution
 
