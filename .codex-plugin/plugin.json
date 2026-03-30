@@ -1,7 +1,7 @@
 {
   "name": "ateam",
   "version": "1.0.1",
-  "description": "Role-based AI team collaboration for Codex. 6 specialist roles orchestrated through a configurable pipeline.",
+  "description": "Specialist AI agents orchestrated as a configurable team pipeline for Codex.",
   "author": {
     "name": "Yiming Wu",
     "url": "https://github.com/yimwoo"
@@ -36,6 +36,8 @@
       "Add a security auditor to the team"
     ],
     "websiteURL": "https://github.com/yimwoo/codex-agenteam",
-    "brandColor": "#2563EB"
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/agenteam-icon.png",
+    "logo": "./assets/agenteam-logo.png"
   }
 }
