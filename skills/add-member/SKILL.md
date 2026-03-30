@@ -1,6 +1,6 @@
 ---
-name: add-role
-description: Add a custom role to the project's .agenteam/config.yaml (or legacy agenteam.yaml). Accepts natural language descriptions.
+name: add-member
+description: Add a new team member. Describe what you need and ATeam infers the config.
 ---
 
 # AgenTeam Add Role

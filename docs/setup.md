@@ -154,7 +154,7 @@ In HOTL mode:
 | run | `$ateam:run` | Run full pipeline |
 | assign | `$ateam:assign` | Assign a task to a role |
 | status | `$ateam:status` | Show team state |
-| add-role | `$ateam:add-role` | Add custom role |
+| add-member | `$ateam:add-member` | Add custom role |
 | generate | `$ateam:generate` | Regenerate agents |
 
 ## Built-in Roles

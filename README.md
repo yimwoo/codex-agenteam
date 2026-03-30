@@ -41,7 +41,7 @@ Use `@Architect`, `@Dev`, `@Reviewer`, and other roles for focused work after se
 Team-level:
 
 ```
-@ATeam run the full pipeline on: add user authentication
+@ATeam let's add user authentication
 @ATeam show team status
 ```
 
@@ -73,7 +73,7 @@ From a project root:
 $ateam:init
 $ateam:run "add user authentication"
 $ateam:status
-$ateam:add-role
+$ateam:add-member
 $ateam:generate
 ```
 
@@ -91,7 +91,7 @@ After that, use `$ateam:run` to start work and `$ateam:status` to inspect the cu
 4. Start with a real task:
 
 ```
-@ATeam run the full pipeline on: add rate limiting to the API
+@ATeam let's add rate limiting to the API
 ```
 
 ```bash
@@ -122,7 +122,7 @@ In the Codex App, `@` any team member directly:
 Use `@ATeam` for team-level operations:
 
 ```
-@ATeam run the full pipeline on: add rate limiting to the API
+@ATeam let's add rate limiting to the API
 @ATeam show team status
 @ATeam add a security auditor that focuses on OWASP top 10
 @ATeam add a performance engineer to profile API response times
@@ -140,7 +140,7 @@ $ateam:run "Refactor the database layer to use connection pooling"
 $ateam:status
 
 # Add a custom role
-$ateam:add-role
+$ateam:add-member
 
 # Regenerate agent TOML files after config changes
 $ateam:generate

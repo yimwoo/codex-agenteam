@@ -48,8 +48,8 @@ print('OK')
   [ -s "$PLUGIN_DIR/skills/status/SKILL.md" ]
 }
 
-@test "add-role SKILL.md exists and is non-empty" {
-  [ -s "$PLUGIN_DIR/skills/add-role/SKILL.md" ]
+@test "add-member SKILL.md exists and is non-empty" {
+  [ -s "$PLUGIN_DIR/skills/add-member/SKILL.md" ]
 }
 
 @test "generate SKILL.md exists and is non-empty" {

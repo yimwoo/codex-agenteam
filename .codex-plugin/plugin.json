@@ -26,13 +26,13 @@
   "interface": {
     "displayName": "ATeam",
     "shortDescription": "AI dev team -- @Researcher, @Pm, @Architect, @Dev, @Qa, @Reviewer.",
-    "longDescription": "ATeam provides 6 specialist roles as Codex agents. Talk to @Architect, @Reviewer, @Pm directly, or use @ATeam to run the full pipeline. Configure roles, write policies, and custom team members via .agenteam/config.yaml.",
+    "longDescription": "ATeam provides specialist roles as Codex agents. Talk to @Architect, @Reviewer, @Pm directly, or use @ATeam to run the full pipeline. Configure roles, write policies, and custom team members via .agenteam/config.yaml.",
     "developerName": "Yiming Wu",
     "category": "Productivity",
     "capabilities": ["Interactive", "Read", "Write"],
     "defaultPrompt": [
       "Show my team",
-      "Run the full pipeline on: add user authentication",
+      "Let's add user authentication",
       "Add a security auditor to the team"
     ],
     "websiteURL": "https://github.com/yimwoo/codex-agenteam",

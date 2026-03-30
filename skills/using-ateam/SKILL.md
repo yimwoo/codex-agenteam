@@ -47,7 +47,7 @@ Match the user's request to a skill. **You must invoke the skill, not do the wor
 | "run the pipeline", "full workflow on X", "build X end-to-end" | `$ateam:run` |
 | "set up team", "initialize", "configure", "show my team" | `$ateam:init` |
 | "status", "progress", "what's happening" | `$ateam:status` |
-| "add a role", "add a member", "new team member" | `$ateam:add-role` |
+| "add a role", "add a member", "new team member" | `$ateam:add-member` |
 | "regenerate agents", "sync agents" | `$ateam:generate` |
 | "assign X to Y", "ask X to do Y" | `$ateam:assign` |
 | "standup", "quick status", "what's the team status", "project report" | `$ateam:standup` |
@@ -65,7 +65,7 @@ But still handle the request if they ask through @ATeam.
 | run | `$ateam:run` | Run the full pipeline for a task |
 | init | `$ateam:init` | Guided team setup, show team members |
 | status | `$ateam:status` | Show team state and progress |
-| add-role | `$ateam:add-role` | Add a custom role to the team |
+| add-member | `$ateam:add-member` | Add a custom role to the team |
 | assign | `$ateam:assign` | Assign a task to a specific role |
 | standup | `$ateam:standup` | Quick project status report (<2s) |
 | deepdive | `$ateam:deepdive` | Full specialist analysis (30-60s) |
