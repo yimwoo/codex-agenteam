@@ -13,6 +13,13 @@
 ## v1.1 (next)
 
 - Pipeline reliability: battle-test $ateam:run end-to-end
+- Config simplification: kill `team.pipeline` enum, flatten to `isolation: branch | worktree | none`
+  - Minimal config: just `version: "1"` -- everything else defaulted + auto-detected
+  - HOTL auto-detection becomes default behavior (no `auto` setting)
+  - `dispatch-only` eliminated (just "no stages defined")
+  - `scoped` renamed `none`, `serial` renamed `branch`
+  - Legacy schema accepted with deprecation warning
+  - Design: docs/plans/2026-03-30-config-simplification-design.md
 - Config migration: .agenteam/config.yaml (preferred) with agenteam.yaml legacy fallback
 - Linter improvements: role renames (dev, qa), model inheritance, Codex-compatible sandbox modes
 
