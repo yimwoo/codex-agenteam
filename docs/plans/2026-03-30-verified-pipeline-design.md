@@ -180,7 +180,20 @@ Returns JSON:
   "verify": "python3 -m pytest tests/ -v",
   "source": "config",
   "max_retries": 2,
-  "attempt": 1
+  "attempt": 1,
+  "cwd": "/path/to/project"
+}
+```
+
+In worktree mode, `cwd` points to the worktree:
+```json
+{
+  "stage": "implement",
+  "verify": "python3 -m pytest tests/ -v",
+  "source": "config",
+  "max_retries": 2,
+  "attempt": 1,
+  "cwd": "/path/to/project/.ateam-worktrees/dev-add-auth"
 }
 ```
 
@@ -191,7 +204,8 @@ If no verify in config, auto-detects:
   "verify": "python3 -m pytest -v",
   "source": "auto-detected",
   "max_retries": 2,
-  "attempt": 1
+  "attempt": 1,
+  "cwd": "/path/to/project"
 }
 ```
 
@@ -228,6 +242,29 @@ Persists into `.agenteam/state/<id>.json`:
 }
 ```
 
+### `cmd_record_gate`
+
+```
+agenteam_rt.py record-gate --run-id <id> --stage <stage> --gate-type <auto|human|reviewer|qa> --result <approved|rejected> [--verdict "..."]
+```
+
+Persists gate outcome into `.agenteam/state/<id>.json`:
+```json
+{
+  "stages": {
+    "implement": {
+      "gate": "reviewer",
+      "gate_result": "approved",
+      "gate_agent": "reviewer",
+      "gate_verdict": "PASS WITH WARNINGS: 2 WARN findings"
+    }
+  }
+}
+```
+
+This keeps the runtime as the sole state authority. Skills call `record-gate`
+after processing the gate agent's output; they never edit state files directly.
+
 ### `cmd_final_verify_plan`
 
 ```
@@ -247,10 +284,11 @@ Returns JSON:
 ## Shared Script: `scripts/verify-stage.sh`
 
 ```bash
-verify-stage.sh run <command>
+verify-stage.sh run <command> --cwd <path>
 ```
 
-Executes the command, captures exit code, stdout, stderr. Returns JSON:
+`--cwd` is mandatory. Executes the command in the specified directory
+(the isolated branch checkout or worktree). Returns JSON:
 ```json
 {
   "exit_code": 0,
@@ -280,8 +318,8 @@ On non-zero exit:
 
 2. If verify is null: skip verification, continue to gate.
 
-3. Execute verification:
-   scripts/verify-stage.sh run "<verify command>"
+3. Execute verification (in the isolated workspace):
+   scripts/verify-stage.sh run "<verify command>" --cwd "<cwd from verify-plan>"
 
 4. Record result:
    agenteam_rt.py record-verify --run-id <id> --stage <stage> --result pass|fail --output "..."
@@ -289,8 +327,14 @@ On non-zero exit:
 5. If passed: continue to gate check.
 
 6. If failed and attempts < max_retries:
-   - Log: "Verification failed (attempt N/max). Re-dispatching <role>..."
-   - Re-dispatch the same role with the failure output as context
+   - Log: "Verification failed (attempt N/max). Re-dispatching for repair..."
+   - Determine repair role(s) using the same write-scope rule as final-repair:
+     * Single-role stage: re-dispatch that role
+     * Multi-role stage: identify which role's write_scope covers the failing
+       files. If verify output references test files -> qa. If source files -> dev.
+       If unclear or multiple scopes -> re-dispatch ALL writing roles from the stage.
+       Read-only roles (e.g., reviewer) are never re-dispatched for repair.
+   - Re-dispatch repair role(s) with the failure output as context
    - The agent sees what failed and attempts to fix it
    - Go to step 3 (re-verify)
 
@@ -404,23 +448,27 @@ Slice 4: cmd_final_verify_plan
   Files: runtime
   Tests: TestFinalVerifyPlan -- commands, policy, retries
 
-Slice 5: Update run skill with verify-retry loop
+Slice 5: cmd_record_gate
+  Files: runtime state management
+  Tests: TestRecordGate -- persist gate outcome, agent vs human, self-approval prevention
+
+Slice 6: Update run skill with verify-retry loop
   Files: skills/run/SKILL.md
   Tests: manual invocation
 
-Slice 6: Update run skill with final_verify
+Slice 7: Update run skill with final_verify
   Files: skills/run/SKILL.md
   Tests: manual invocation
 
-Slice 7: Update config template with verify examples
+Slice 8: Update config template with verify examples
   Files: templates/agenteam.yaml.template
   Tests: smoke test
 
-Slice 8: Gate type expansion (reviewer, qa)
+Slice 9: Gate type expansion (reviewer, qa)
   Files: runtime dispatch, skills/run/SKILL.md
-  Tests: TestGateTypes
+  Tests: TestGateTypes -- agent gate dispatch, verdict parsing, state persistence
 
-Slice 9: Final integration testing
+Slice 10: Final integration testing
   Files: test/test_runtime.py
   Tests: e2e pipeline with verify
   Gate: human
