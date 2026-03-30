@@ -153,12 +153,26 @@ Arguments:
 - `--baseline`: the git commit SHA captured before the stage's parallel
   execution began. The audit compares all changes since this baseline.
 
+### Provenance requirement
+
+A combined `git diff` after parallel execution does not preserve which
+writer touched which file. To make the audit sound, **each parallel
+writer must create a tagged commit before completion.**
+
+The run skill instructs each parallel subagent:
+"When done, commit your changes with the message: `[ateam:<role>] <summary>`"
+
+The scope audit then attributes files to roles by walking commits:
+
 Process:
-1. Run `git diff --name-only <baseline>..HEAD` to get all changed files
-2. For each changed file, determine which role's write_scope covers it
-   (glob matching using `fnmatch`)
-3. For each writing role in the stage, check if any of its changed files
-   fall outside its declared write_scope
+1. Run `git log --name-only --format="%H %s" <baseline>..HEAD` to get
+   commits with their changed files
+2. Parse the `[ateam:<role>]` tag from each commit message to identify
+   which role made which changes
+3. For each writing role, collect all files it changed across its commits
+4. Check each file against the role's declared `write_scope` using `fnmatch`
+5. Files changed by untagged commits are attributed to "unknown" and
+   flagged as violations (safety: unattributed changes are never trusted)
 
 Returns JSON:
 ```json
@@ -190,15 +204,45 @@ On scope violation:
 }
 ```
 
-Read-only roles are excluded from the audit entirely.
+### Read-only role handling
+
+Read-only roles (`can_write: false`) are excluded from the **write_scope**
+audit (they have no declared scope to check against). However, the scope
+audit DOES detect if a read-only role created commits (via the `[ateam:<role>]`
+tag). If a read-only role produces tagged commits with file changes, the
+audit flags this as a violation:
+
+```json
+{
+  "violations": [
+    {"role": "reviewer", "file": "src/auth.py", "expected_scope": "read-only (can_write: false)"}
+  ]
+}
+```
+
+This catches the real failure mode: a "read-only" agent that writes
+accidentally. The violation triggers the same serial fallback as a
+scope violation from a writing role.
 
 ## Serial Fallback
 
-When a scope audit fails:
+### Baseline safety
+
+The baseline commit (`$BASELINE`) is captured at the start of each stage's
+parallel dispatch. It represents the state AFTER all prior stages have
+completed and committed their work. Resetting to baseline only discards
+the current stage's parallel attempt -- prior stage outputs are safe because
+they are committed before any parallel dispatch begins.
+
+**Rule: each stage's output must be committed before the next stage begins.**
+The run skill ensures this by having each stage's agents commit their work
+(tagged commits) and the skill verifying the commits exist before advancing.
+
+### When a scope audit fails:
 
 1. Log which role touched which out-of-scope files (from the violations list)
-2. **Reset to baseline:** `git reset --hard <baseline>` to discard ALL parallel
-   stage work (treat the entire parallel attempt as tainted)
+2. **Reset to baseline:** `git reset --hard <baseline>` to discard ONLY this
+   stage's parallel work. Prior stage outputs are safe (committed before baseline).
 3. **Re-run the stage serially:** dispatch each writing role one at a time
    (same order as groups, flattened)
 4. **No scope audit after serial rerun** (serial mode is the trusted fallback)
@@ -250,9 +294,13 @@ intent: Enable scoped parallel execution for writing agents within a stage
 constraints:
   - Runtime partitions writers into parallel-safe groups (no scope overlap)
   - Groups run sequentially; roles within a group run in parallel
-  - Read-only roles run alongside any group, excluded from scope audit
-  - Post-dispatch scope audit checks every changed file against write_scope
+  - Read-only roles run alongside any group; write_scope audit excludes them
+    BUT the audit detects if a read-only role accidentally writes files
+  - Each parallel writer must create a tagged commit ([ateam:<role>]) for provenance
+  - Post-dispatch scope audit attributes files to roles via commit tags
+  - Untagged commits are flagged as violations (never trusted)
   - Scope violation triggers full stage reset + serial fallback
+  - Reset to baseline only discards current stage (prior stages are committed)
   - Serial fallback reruns from clean baseline (tainted work discarded)
   - Existing isolation: branch and isolation: worktree unaffected
   - Stage verification and gate checks run after dispatch (same as serial)
@@ -260,9 +308,12 @@ constraints:
 success_criteria:
   - Non-overlapping writers in a stage dispatch in parallel
   - Overlapping writers are partitioned into separate sequential groups
-  - Scope audit detects out-of-scope file changes
+  - Scope audit attributes files to roles via tagged commits (provenance)
+  - Scope audit detects out-of-scope file changes per role
+  - Scope audit detects read-only roles that accidentally wrote files
+  - Untagged commits are flagged as violations
   - Scope violation triggers reset to baseline + serial fallback
-  - Read-only roles are never scope-audited
+  - Reset to baseline preserves prior stage outputs (committed before baseline)
   - Existing serial/worktree isolation modes continue to work unchanged
   - Pipeline completes correctly with parallel dispatch
   - Parallel dispatch is faster than serial for non-overlapping stages
