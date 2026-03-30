@@ -153,26 +153,58 @@ Arguments:
 - `--baseline`: the git commit SHA captured before the stage's parallel
   execution began. The audit compares all changes since this baseline.
 
-### Provenance requirement
+### Provenance: serialized commit capture
 
-A combined `git diff` after parallel execution does not preserve which
-writer touched which file. To make the audit sound, **each parallel
-writer must create a tagged commit before completion.**
+Git's index/HEAD cannot handle concurrent commits from parallel agents.
+The solution: **agents write files in parallel, but commits are serialized
+by the skill after all agents complete.**
 
-The run skill instructs each parallel subagent:
-"When done, commit your changes with the message: `[ateam:<role>] <summary>`"
+Execution model:
 
-The scope audit then attributes files to roles by walking commits:
+```
+1. Capture baseline: BASELINE=$(git rev-parse HEAD)
+
+2. Launch all roles in the group as parallel subagents
+   - Agents write/modify files but do NOT commit
+   - Agent instructions: "Write your changes but do not run git add or git commit"
+
+3. Wait for all agents in the group to complete
+
+4. Pre-commit working-tree audit:
+   - Run git status --porcelain to get all modified/untracked files
+   - Check for files outside ALL declared write_scopes (catches read-only
+     role writes and any unexpected file changes)
+   - If unexpected files found: flag as violation, trigger serial fallback
+
+5. Serialized commit capture (one role at a time):
+   For each writing role in the group:
+     a. git add <files matching role's write_scope>
+        (use git add with explicit glob patterns from write_scope)
+     b. If staged files exist:
+        git commit -m "[ateam:<role>] <stage>: <summary>"
+     c. If no staged files: skip (role made no changes)
+
+6. Post-commit untracked check:
+   - Run git status --porcelain again
+   - Any remaining modified/untracked files were not claimed by any role's
+     write_scope -> flag as violation
+```
+
+This gives clean per-role provenance via separate commits while keeping
+the parallelism where it matters (agent thinking + file writing, which is
+95%+ of the wall-clock time).
+
+The scope audit then walks commits with full attribution:
 
 Process:
 1. Run `git log --name-only --format="%H %s" <baseline>..HEAD` to get
    commits with their changed files
-2. Parse the `[ateam:<role>]` tag from each commit message to identify
-   which role made which changes
-3. For each writing role, collect all files it changed across its commits
+2. Parse the `[ateam:<role>]` tag from each commit message
+3. For each writing role, collect all files from its tagged commits
 4. Check each file against the role's declared `write_scope` using `fnmatch`
-5. Files changed by untagged commits are attributed to "unknown" and
-   flagged as violations (safety: unattributed changes are never trusted)
+5. The serialized commit capture guarantees: each commit is from exactly
+   one role, and files are staged only from that role's scope. Violations
+   here indicate a scope declaration mismatch, not a concurrent write issue.
 
 Returns JSON:
 ```json
@@ -206,23 +238,31 @@ On scope violation:
 
 ### Read-only role handling
 
-Read-only roles (`can_write: false`) are excluded from the **write_scope**
-audit (they have no declared scope to check against). However, the scope
-audit DOES detect if a read-only role created commits (via the `[ateam:<role>]`
-tag). If a read-only role produces tagged commits with file changes, the
-audit flags this as a violation:
+Read-only roles (`can_write: false`) are detected at TWO checkpoints:
+
+**Checkpoint 1: Pre-commit working-tree audit (step 4 above)**
+After all agents complete but before any commits, `git status --porcelain`
+reveals all file changes. Files outside all declared write_scopes are
+flagged. This catches read-only agents that modified the working tree
+even if they didn't attempt a commit. This is the primary detection
+mechanism.
+
+**Checkpoint 2: Post-commit audit**
+After the serialized commit capture (step 5), any remaining uncommitted
+changes (`git status --porcelain` again) indicate files that no role's
+scope claimed. These are flagged as violations.
+
+Both checkpoints catch the real failure mode: a "read-only" agent that
+writes files accidentally. Any violation triggers the same serial fallback
+as a write_scope violation from a writing role.
 
 ```json
 {
   "violations": [
-    {"role": "reviewer", "file": "src/auth.py", "expected_scope": "read-only (can_write: false)"}
+    {"role": "unknown", "file": "src/auth.py", "reason": "file outside all declared write_scopes (possibly from read-only agent)"}
   ]
 }
 ```
-
-This catches the real failure mode: a "read-only" agent that writes
-accidentally. The violation triggers the same serial fallback as a
-scope violation from a writing role.
 
 ## Serial Fallback
 
@@ -235,8 +275,9 @@ the current stage's parallel attempt -- prior stage outputs are safe because
 they are committed before any parallel dispatch begins.
 
 **Rule: each stage's output must be committed before the next stage begins.**
-The run skill ensures this by having each stage's agents commit their work
-(tagged commits) and the skill verifying the commits exist before advancing.
+The run skill ensures this via the serialized commit capture (step 5 of
+the provenance model). The skill verifies tagged commits exist before
+advancing to the next stage.
 
 ### When a scope audit fails:
 
@@ -296,9 +337,11 @@ constraints:
   - Groups run sequentially; roles within a group run in parallel
   - Read-only roles run alongside any group; write_scope audit excludes them
     BUT the audit detects if a read-only role accidentally writes files
-  - Each parallel writer must create a tagged commit ([ateam:<role>]) for provenance
-  - Post-dispatch scope audit attributes files to roles via commit tags
-  - Untagged commits are flagged as violations (never trusted)
+  - Parallel agents write files but do NOT commit (agents instructed accordingly)
+  - Skill serializes commit capture after all agents complete (one role at a time)
+  - Pre-commit working-tree audit catches files outside all declared scopes
+  - Post-commit scope audit attributes files to roles via tagged commits
+  - Unclaimed files after commit capture are flagged as violations
   - Scope violation triggers full stage reset + serial fallback
   - Reset to baseline only discards current stage (prior stages are committed)
   - Serial fallback reruns from clean baseline (tainted work discarded)
@@ -308,10 +351,11 @@ constraints:
 success_criteria:
   - Non-overlapping writers in a stage dispatch in parallel
   - Overlapping writers are partitioned into separate sequential groups
-  - Scope audit attributes files to roles via tagged commits (provenance)
+  - Pre-commit audit catches working-tree writes outside all scopes
+  - Serialized commit capture produces clean per-role commits
+  - Post-commit audit catches unclaimed file changes
   - Scope audit detects out-of-scope file changes per role
   - Scope audit detects read-only roles that accidentally wrote files
-  - Untagged commits are flagged as violations
   - Scope violation triggers reset to baseline + serial fallback
   - Reset to baseline preserves prior stage outputs (committed before baseline)
   - Existing serial/worktree isolation modes continue to work unchanged
