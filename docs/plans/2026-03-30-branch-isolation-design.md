@@ -15,15 +15,20 @@ bash helper executes git operations, skills orchestrate the lifecycle.
 
 **In scope:**
 - `$ateam:assign` with writing roles in any pipeline mode
-- `$ateam:run` in `standalone` and `dispatch-only` modes
+- `$ateam:run` in `standalone` mode (dispatch-only has no pipeline to run;
+  the run skill already tells the user to use `$ateam:assign` instead)
 - Branch creation for `serial` mode
 - Worktree creation for `worktree` mode
 - Passthrough for `scoped` mode (with explicit warning)
 
 **Out of scope (deferred):**
-- `pipeline: hotl` -- HOTL execution already owns branch/worktree preflight
-  via its own brainstorming and loop-execution skills. Phase 1 defers git
-  lifecycle to HOTL when `pipeline: hotl`. Phase 3 will unify them.
+- `$ateam:run` when `pipeline: hotl` -- HOTL execution already owns
+  branch/worktree preflight via its own brainstorming and loop-execution
+  skills. Phase 1 defers the run pipeline's git lifecycle to HOTL when
+  `pipeline: hotl`. Phase 3 will unify them.
+- Note: `$ateam:assign` ALWAYS applies branch isolation regardless of
+  pipeline mode, because assign is user-initiated and outside HOTL's
+  execution flow.
 - Runtime state machine changes (Phase 2)
 - HOTL adapter enforcement (Phase 3)
 
@@ -96,14 +101,17 @@ Pure resolver. No git side effects. Returns JSON.
 }
 ```
 
-### Output when `pipeline: hotl`
+### Output when `pipeline: hotl` and context is `run`
+
+Only returned for `$ateam:run` (with `--run-id`). Ad-hoc `$ateam:assign`
+(with `--role`) still gets normal branch isolation even in HOTL projects.
 
 ```json
 {
   "mode": "hotl-deferred",
   "action": "none",
   "branch": null,
-  "note": "HOTL mode defers git lifecycle to HOTL execution. Phase 3 will unify.",
+  "note": "HOTL run mode defers git lifecycle to HOTL execution. Phase 3 will unify.",
   "pipeline_mode": "hotl"
 }
 ```
@@ -120,10 +128,16 @@ leading/trailing dashes stripped.
 
 ### `base_branch` resolution
 
-The runtime suggests `base_branch` by reading the repo's default branch
-(`git symbolic-ref refs/remotes/origin/HEAD` or fallback to `main`). This is
-a suggestion only -- the skill captures the actual current branch before any
-mutation and uses that as the real return target.
+**For pipeline runs (`$ateam:run`):** `base_branch` is the repo's default
+branch (`git symbolic-ref refs/remotes/origin/HEAD` or fallback to `main`).
+Pipeline runs should start from a clean baseline.
+
+**For ad-hoc assign (`$ateam:assign`):** `base_branch` is the user's current
+HEAD. Ad-hoc work should fork from wherever the user is right now, because
+the user may be on a feature branch and want the assignment to build on it.
+
+In both cases, the skill captures the actual current branch before any git
+mutation and uses that as the return target (not `base_branch`).
 
 ## Shared Helper: `scripts/git-isolate.sh`
 
@@ -167,7 +181,7 @@ Possible issues (non-empty `issues` array):
 | Condition | Issue | Skill behavior |
 |-----------|-------|----------------|
 | Not a git repo | `"not-a-git-repo"` | Abort with clear message |
-| Dirty worktree | `"dirty-worktree"` | Warn user, ask to stash or commit first |
+| Dirty worktree | `"dirty-worktree"` | **Block for serial/worktree mode.** User must stash or commit before proceeding. Carrying uncommitted changes into a new branch breaks the isolation guarantee. For scoped mode (no branch switch), this is a warning only. |
 | Detached HEAD | `"detached-head"` | Warn user, suggest checking out a branch |
 
 ### `create-branch` behavior
@@ -183,8 +197,13 @@ Possible issues (non-empty `issues` array):
 | Condition | Behavior |
 |-----------|----------|
 | Path does not exist | Create worktree with new branch |
-| Path exists and is a worktree | Reuse (resume scenario) |
+| Path exists and is a worktree | Reuse (resume scenario). Will be cleaned up after completion if clean. |
 | Path exists but is not a worktree | Error: path is occupied |
+
+**Reuse + cleanup rule:** A reused worktree follows the same cleanup rules as
+a freshly created one -- if it is clean after the agent completes, it gets
+removed. If it has uncommitted changes, it is preserved. There is no
+distinction between "new" and "reused" worktrees for cleanup purposes.
 
 ### `cleanup-worktree` behavior
 
@@ -201,7 +220,9 @@ Possible issues (non-empty `issues` array):
 ```
 ### N. Branch Isolation
 
-1. Check pipeline mode. If pipeline: hotl, skip (HOTL owns git lifecycle).
+1. No pipeline mode check needed for assign. Assign ALWAYS applies branch
+   isolation regardless of pipeline mode, because it is user-initiated and
+   outside HOTL's execution flow.
 
 2. Call preflight:
    bash <plugin-dir>/scripts/git-isolate.sh preflight
@@ -256,7 +277,7 @@ constraints:
   - Shared git-isolate.sh avoids duplication between assign and run skills
   - Write mode config (serial/worktree/scoped) determines isolation behavior
   - Pipeline runs use one branch per run; ad-hoc assigns use one branch per assignment
-  - pipeline: hotl defers git lifecycle to HOTL until Phase 3 unifies them
+  - pipeline: hotl defers ONLY $ateam:run git lifecycle to HOTL; $ateam:assign still isolates
   - Scoped mode uses current branch -- this is NOT isolation, just a passthrough
     with an explicit warning that non-overlap is trusted, not enforced
   - Skill captures the actual current branch before mutation (not runtime's base_branch)
@@ -268,7 +289,9 @@ success_criteria:
   - Preflight catches dirty worktree, detached HEAD, non-git-repo before any mutation
   - Branch collision handled gracefully (suffix or resume)
   - Worktree with uncommitted changes is preserved, not auto-deleted
-  - pipeline: hotl returns action: none (deferred)
+  - pipeline: hotl returns action: none for run only; assign still gets branch isolation
+  - Dirty worktree blocks serial/worktree mode (must stash/commit first)
+  - Ad-hoc assign branches fork from current HEAD; run branches fork from default branch
   - scoped mode returns action: use-current with explicit warning
 risk_level: medium
 ```
@@ -286,7 +309,9 @@ verify_steps:
   - check: git-isolate.sh cleanup-worktree preserves dirty worktrees
   - check: assign skill creates branch, launches agent, returns to captured branch
   - check: run skill creates run branch at start, all stages use it, returns at end
-  - check: hotl mode skips branch isolation entirely
+  - check: hotl mode skips branch isolation for run only; assign still isolates
+  - check: dirty worktree blocks serial/worktree mode preflight
+  - check: ad-hoc assign forks from current HEAD, not default branch
   - confirm: no writing agent operates on main when serial or worktree mode is configured
 ```
 
