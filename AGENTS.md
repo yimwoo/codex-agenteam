@@ -80,3 +80,20 @@ When `pipeline: hotl`, AgenTeam is the outer orchestrator and HOTL is the inner 
 - Valid write modes: `serial`, `scoped`, `worktree`
 - State files live in `.agenteam/state/<run-id>.json`
 - Tests invoke the runtime as a subprocess via `python3 runtime/agenteam_rt.py` with a temp directory containing a generated `agenteam.yaml`
+
+## Releasing
+
+When bumping the version for a release, update **all three** locations:
+
+1. `.codex-plugin/plugin.json` — `"version": "X.Y.Z"` (source of truth)
+2. `runtime/agenteam/__init__.py` — `__version__ = "X.Y.Z"`
+3. `pyproject.toml` — `version = "X.Y.Z"`
+
+All three must match. Then commit, push, and create a GitHub release with `gh release create vX.Y.Z`.
+
+## Git Workflow
+
+- **Always work on feature branches**, not main. Use `feature/<short-description>` for new features and `fix/<short-description>` for bug fixes.
+- Create the branch before starting work. Push and create a PR when ready to merge.
+- Main branch should only receive merges via PR.
+- When creating commits, do NOT include `Co-Authored-By` trailers. The only committer and author should be `yimwoo <yiming.wu@outlook.com>`.
