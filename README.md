@@ -222,6 +222,33 @@ cd codex-agenteam
 bash install.sh --local
 ```
 
+## Smoke Test
+
+Run the built-in smoke harness to validate AgenTeam against a real project or a tiny fallback playground.
+
+```bash
+# Uses an existing project when available
+python3 scripts/smoke_playground.py --project /path/to/project
+
+# If the target is missing, AgenTeam creates a temporary playground automatically
+python3 scripts/smoke_playground.py --project /path/to/team-memory
+
+# No project at all? It will create and test a minimal temp project
+python3 scripts/smoke_playground.py
+```
+
+What it checks:
+
+- runtime health and config validation
+- agent generation
+- role resolution
+- dispatch plans
+- verification plan detection
+- standup and status output
+- verify/gate bookkeeping in run state
+
+If runtime Python deps are missing, the smoke runner bootstraps a temporary venv with `runtime/requirements.txt` unless you pass `--skip-deps-bootstrap`.
+
 **Requirements:** Python 3.10+, Codex App or Codex CLI.
 
 ---

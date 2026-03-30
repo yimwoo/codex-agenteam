@@ -151,3 +151,8 @@ print('OK')
   [ -f "$cache_dir/.codex-plugin/plugin.json" ]
   [ ! -e "$cache_dir/OLD_MARKER.txt" ]
 }
+
+@test "smoke_playground.py fallback smoke test passes" {
+  run python3 "$PLUGIN_DIR/scripts/smoke_playground.py" --json
+  [ "$status" -eq 0 ]
+}
