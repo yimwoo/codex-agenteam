@@ -1,6 +1,6 @@
 ---
 name: add-role
-description: Add a custom role to the project's agenteam.yaml config. Accepts natural language descriptions.
+description: Add a custom role to the project's .agenteam/config.yaml (or legacy agenteam.yaml). Accepts natural language descriptions.
 ---
 
 # AgenTeam Add Role
@@ -87,7 +87,7 @@ re-confirm. Do not ask field-by-field -- keep it conversational.
 
 ### 5. Write to Config
 
-Read the current `agenteam.yaml` and add the new role under `roles:`.
+Read the current `.agenteam/config.yaml` (or legacy `agenteam.yaml`) and add the new role under `roles:`.
 
 Write the full role block including:
 - `description`
@@ -114,4 +114,4 @@ Show the user:
 - How to use it immediately:
   - Codex App: `@ateam ask <name> to <task>`
   - Codex CLI: `$ateam:assign <name> "<task>"`
-- Reminder: "Edit `agenteam.yaml` anytime to adjust this role."
+- Reminder: "Edit `.agenteam/config.yaml` anytime to adjust this role."

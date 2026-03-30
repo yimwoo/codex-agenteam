@@ -40,7 +40,7 @@ Queue: (empty)
 ### 3. No Active Run
 
 If no run is found, show:
-- Team config status (does agenteam.yaml exist?)
+- Team config status (does `.agenteam/config.yaml` or legacy `agenteam.yaml` exist?)
 - Available roles
 - Suggestion: "Use `$ateam:run` to start a new task."
 

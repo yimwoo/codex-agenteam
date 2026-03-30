@@ -32,11 +32,11 @@ Open any project in Codex and ask AgenTeam to set itself up:
 @ATeam show my team
 ```
 
-On first run, AgenTeam will create `agenteam.yaml`, generate the role agents,
+On first run, AgenTeam will create `.agenteam/config.yaml` (preferred; legacy `agenteam.yaml` still works), generate the role agents,
 and show the available team members.
 
 Use `@ATeam` for setup, status, and pipeline runs.
-Use `@Architect`, `@Implementer`, `@Reviewer`, and other roles for focused work after setup.
+Use `@Architect`, `@Dev`, `@Reviewer`, and other roles for focused work after setup.
 
 Team-level:
 
@@ -50,7 +50,7 @@ Role-level:
 ```
 @Architect    -- system design, risk analysis
 @Reviewer     -- correctness, security, regressions
-@Implementer  -- write production code
+@Dev          -- write production code
 @Pm           -- strategy, priorities, specs
 @Researcher   -- web, GitHub, docs, community
 @Qa           -- unit and integration tests
@@ -77,7 +77,7 @@ $ateam:add-role
 $ateam:generate
 ```
 
-Run `$ateam:init` once per project to create `agenteam.yaml` and `.codex/agents/*.toml`.
+Run `$ateam:init` once per project to create `.agenteam/config.yaml` and `.codex/agents/*.toml`.
 After that, use `$ateam:run` to start work and `$ateam:status` to inspect the current run.
 
 ### 3. First 5 Minutes
@@ -85,7 +85,7 @@ After that, use `$ateam:run` to start work and `$ateam:status` to inspect the cu
 1. Install plugin and open your project.
 2. Initialize once with `@ATeam show my team` (App) or `$ateam:init` (CLI).
 3. Verify setup:
-   `agenteam.yaml` exists in your project root
+   `.agenteam/config.yaml` exists in your project root (or legacy `agenteam.yaml`)
    `.codex/agents/*.toml` exists for the built-in roles
    `@ATeam show my team` lists the built-in roles in the app
 4. Start with a real task:
@@ -98,7 +98,7 @@ After that, use `$ateam:run` to start work and `$ateam:status` to inspect the cu
 $ateam:run "add rate limiting to the API"
 ```
 
-5. Customize roles, models, and pipeline behavior in `agenteam.yaml` when ready.
+5. Customize roles, models, and pipeline behavior in `.agenteam/config.yaml` when ready.
 
 > Install, initialize once, then orchestrate with `@ATeam` or `$ateam:*`, and `@` roles directly whenever you want specialist focus.
 
@@ -110,7 +110,7 @@ In the Codex App, `@` any team member directly:
 
 ```
 @Architect propose an approach for caching
-@Implementer implement the caching layer per the approved plan
+@Dev implement the caching layer per the approved plan
 @Qa add integration tests for the cache
 @Reviewer review the caching implementation
 @Pm prioritize the backlog for next sprint
@@ -150,7 +150,7 @@ $ateam:generate
 
 **Bug fix with review:**
 ```
-@Implementer fix the race condition in src/queue.py -- see issue #42
+@Dev fix the race condition in src/queue.py -- see issue #42
 @Qa add a regression test for the queue race condition
 @Reviewer review the queue fix and test
 ```
@@ -164,7 +164,7 @@ $ateam:generate
 ```
 @ATeam add a security auditor that focuses on auth and data leaks
 ```
-AgenTeam infers the role config, confirms with you, writes to `agenteam.yaml`, and generates the agent. Then `@` them directly:
+AgenTeam infers the role config, confirms with you, writes to `.agenteam/config.yaml` (or legacy `agenteam.yaml`), and generates the agent. Then `@` them directly:
 ```
 @Security Auditor audit the authentication module
 ```
@@ -182,11 +182,11 @@ AgenTeam infers the role config, confirms with you, writes to `agenteam.yaml`, a
 
 Each role writes to a scoped directory -- no overlaps, safe for parallel execution.
 
-All roles are customizable via `agenteam.yaml`. You can override models, write scopes, system instructions, and add entirely new roles.
+All roles are customizable via `.agenteam/config.yaml` (preferred; legacy `agenteam.yaml` still works). You can override models, write scopes, system instructions, and add entirely new roles.
 
 ## Configuration
 
-AgenTeam is configured through `agenteam.yaml` in your project root:
+AgenTeam is configured through `.agenteam/config.yaml` in your project root (or legacy `agenteam.yaml`):
 
 ```yaml
 version: "1"

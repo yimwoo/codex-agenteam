@@ -25,7 +25,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "ATeam",
-    "shortDescription": "AI dev team -- @Researcher, @Pm, @Architect, @Implementer, @Qa, @Reviewer.",
+    "shortDescription": "AI dev team -- @Researcher, @Pm, @Architect, @Dev, @Qa, @Reviewer.",
     "longDescription": "ATeam provides 6 specialist roles as Codex agents. Talk to @Architect, @Reviewer, @Pm directly, or use @ATeam to run the full pipeline. Configure roles, write policies, and custom team members via .agenteam/config.yaml.",
     "developerName": "Yiming Wu",
     "category": "Productivity",

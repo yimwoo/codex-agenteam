@@ -1,6 +1,6 @@
 ---
 name: init
-description: Initialize team config for a project. Creates agenteam.yaml and generates .codex/agents/*.toml.
+description: Initialize team config for a project. Creates .agenteam/config.yaml (or legacy agenteam.yaml) and generates .codex/agents/*.toml.
 ---
 
 # AgenTeam Init
@@ -28,7 +28,7 @@ pip install pyyaml toml
 
 ### 2. Check for Existing Config
 
-Look for `agenteam.yaml` in the project root.
+Look for `.agenteam/config.yaml` first, then legacy `agenteam.yaml`.
 
 - **If exists:** Ask the user if they want to reconfigure or keep existing config.
   If keeping, skip to step 4.
@@ -54,7 +54,7 @@ Ask the user (one question at a time):
    (dev: src/**, lib/** | qa: tests/**, *.test.*)"
 4. **Custom roles:** "Do you want to add any custom roles? (e.g., security_auditor, docs_writer)"
 
-Update `agenteam.yaml` with the user's choices.
+Update `.agenteam/config.yaml` (or the existing legacy `agenteam.yaml`) with the user's choices.
 
 ### 4. Validate Config
 
@@ -80,7 +80,7 @@ python3 <plugin-dir>/runtime/agenteam_rt.py hotl check
 
 If HOTL is available and pipeline is not already set to `hotl`:
 - Inform the user: "HOTL plugin detected. You can set `pipeline: hotl` in
-  agenteam.yaml to integrate with HOTL workflows."
+  .agenteam/config.yaml (or legacy agenteam.yaml) to integrate with HOTL workflows."
 - Do not change the config automatically.
 
 ### 7. Summary

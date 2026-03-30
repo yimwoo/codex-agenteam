@@ -15,11 +15,8 @@ Thumbs.db
 hotl-workflow*.md
 .hotl/
 
-# Design docs and Claude config (generated per-session, not repo content)
-docs/plans/
-docs/designs/
-docs/strategies/
-docs/research/
+# Design docs and Claude config (generated per-session in user projects, not repo content)
+# NOTE: These dirs ARE tracked in this plugin repo itself (roadmap, research reports)
 CLAUDE.md
 
 # Lore runtime data (user-specific, not repo content)

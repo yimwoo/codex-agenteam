@@ -11,12 +11,12 @@ Assign a task to a specific team member, independent of the pipeline.
 
 ### 1. Auto-Init Guard
 
-Check for `agenteam.yaml` in the project root. If missing:
+Check for `.agenteam/config.yaml` (or legacy `agenteam.yaml`) in the project root. If missing:
 - Create config dir: `mkdir -p .agenteam`
 - Copy the template: `cp <plugin-dir>/templates/agenteam.yaml.template .agenteam/config.yaml`
 - Set the team name to the project directory name
 - Generate agents: `python3 <runtime>/agenteam_rt.py generate`
-- Tell the user: "AgenTeam auto-initialized with default roles. Edit `agenteam.yaml` to customize."
+- Tell the user: "AgenTeam auto-initialized with default roles. Edit `.agenteam/config.yaml` to customize."
 
 ### 2. Accept Input
 
