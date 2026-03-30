@@ -1,6 +1,6 @@
 # HOTL Integration
 
-AgenTeam auto-detects the [HOTL plugin](https://github.com/yimwoo/hotl). When present, roles can use HOTL execution skills for stronger development discipline.
+AgenTeam auto-detects the [HOTL plugin](https://github.com/yimwoo/hotl-plugin). When present, roles can use HOTL execution skills for stronger development discipline.
 
 ## How It Works
 
