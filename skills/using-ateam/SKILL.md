@@ -17,7 +17,8 @@ Check if `.agenteam/config.yaml` (or legacy `agenteam.yaml`) exists in the proje
 **If missing**, initialize immediately:
 
 ```bash
-PLUGIN_DIR="$(find ~/.codex/plugins/cache -path '*/ateam/local' -type d 2>/dev/null | head -1)"
+PLUGIN_DIR="$(find ~/.codex/plugins/cache -path '*/ateam' -type d 2>/dev/null | head -1)"
+if [ -d "$PLUGIN_DIR/local" ]; then PLUGIN_DIR="$PLUGIN_DIR/local"; fi
 mkdir -p .agenteam
 cp "$PLUGIN_DIR/templates/agenteam.yaml.template" .agenteam/config.yaml
 python3 "$PLUGIN_DIR/runtime/agenteam_rt.py" generate
@@ -36,6 +37,9 @@ Then decide what to do next:
 
 - If the user's request was team setup or "show my team", show the team roster and stop.
 - Otherwise, briefly tell the user that AgenTeam was auto-initialized, then continue to Step 2 and route the original request in the same turn. Do not stop after setup.
+
+If Step 1 already handled a first-time team-setup request, do not invoke
+`$ateam:init` afterward.
 
 If you are showing the team, use:
 
@@ -59,7 +63,7 @@ Match the user's request to a skill. **You must invoke the skill, not do the wor
 | User Says | Invoke |
 |-----------|--------|
 | "run the pipeline", "full workflow on X", "build X end-to-end", "let's start building X", "start a new project", "build a new project called X", "continue the pipeline", "keep going on X" | `$ateam:run` |
-| "set up team", "initialize", "configure", "build my team", "show my team" | `$ateam:init` |
+| "reconfigure team", "customize team", "change team settings" | `$ateam:init` |
 | "status", "progress", "what's happening" | `$ateam:status` |
 | "add a role", "add a member", "new team member" | `$ateam:add-member` |
 | "regenerate agents", "sync agents" | `$ateam:generate` |

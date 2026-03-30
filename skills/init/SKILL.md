@@ -11,13 +11,13 @@ Set up AgenTeam for the current project.
 
 ### 1. Check Prerequisites
 
-Resolve the runtime path first, then use the runtime itself as the readiness check.
-Do not spend time on separate environment probes if the runtime command can tell
-you what is missing.
+Resolve the runtime path first, then use the runtime entrypoint itself as the
+readiness check. Do not spend time on separate environment probes if the runtime
+can tell you what is missing.
 
 Fast path:
 ```bash
-python3 <plugin-dir>/runtime/agenteam_rt.py validate
+python3 <plugin-dir>/runtime/agenteam_rt.py --help
 ```
 
 If Python or dependencies are missing, the runtime prints a JSON error. Only then

@@ -14,7 +14,8 @@ def test_using_ateam_auto_init_continues_original_request():
     assert "continue to Step 2 and route the original request in the same turn" in text
     assert "Do not stop after setup." in text
     assert "Do not run `init --task` during team setup" in text
-    assert "*/ateam/local" in text
+    assert 'if [ -d "$PLUGIN_DIR/local" ]; then PLUGIN_DIR="$PLUGIN_DIR/local"; fi' in text
+    assert "If Step 1 already handled a first-time team-setup request, do not invoke" in text
 
 
 def test_using_ateam_routes_build_project_requests_to_run():
@@ -34,4 +35,5 @@ def test_run_skill_requires_real_dispatch_and_full_pipeline():
 def test_init_skill_prefers_validate_over_dummy_init():
     text = read_skill("skills/init/SKILL.md")
     assert "python3 <plugin-dir>/runtime/agenteam_rt.py validate" in text
+    assert "python3 <plugin-dir>/runtime/agenteam_rt.py --help" in text
     assert "Do not create a dummy run just to validate config." in text

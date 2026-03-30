@@ -118,6 +118,15 @@ class TestValidateCommand:
         }
         assert not (tmp_path / ".agenteam" / "state").exists()
 
+    def test_validate_preserves_dispatch_only_mode(self, tmp_path):
+        make_config(tmp_path, overrides={"team": {"pipeline": "dispatch-only"}})
+
+        r = run_rt("validate", cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["pipeline_mode"] == "dispatch-only"
+
 
 # ---------------------------------------------------------------------------
 # Role resolution
