@@ -290,14 +290,22 @@ def cmd_init(args, config: dict) -> None:
 
 def find_latest_state() -> dict | None:
     """Find the most recent state file."""
+    latest_state_path = find_latest_state_path()
+    if latest_state_path is None:
+        return None
+    with open(latest_state_path) as f:
+        return json.load(f)
+
+
+def find_latest_state_path() -> Path | None:
+    """Find the most recent state file path."""
     state_dir = Path.cwd() / ".agenteam" / "state"
     if not state_dir.exists():
         return None
     files = sorted(state_dir.glob("*.json"), reverse=True)
     if not files:
         return None
-    with open(files[0]) as f:
-        return json.load(f)
+    return files[0]
 
 
 def cmd_status(args, config: dict) -> None:
@@ -471,6 +479,46 @@ def cmd_hotl_check(args, config: dict | None = None) -> None:
     """Check HOTL availability."""
     result = hotl_available()
     result["active_in_project"] = hotl_active_in_project()
+    print(json.dumps(result))
+
+
+def generated_agents_exist() -> bool:
+    """Check whether generated Codex agent TOML files exist for the project."""
+    agents_dir = Path.cwd() / ".codex" / "agents"
+    return agents_dir.exists() and any(agents_dir.glob("*.toml"))
+
+
+def cmd_health(args) -> None:
+    """Report a minimal runtime/project readiness summary."""
+    config_exists = False
+    pipeline_mode = None
+
+    try:
+        config_path = find_config(args.config if getattr(args, "config", None) else None)
+    except FileNotFoundError:
+        config_path = None
+    else:
+        config_exists = True
+        config = load_config(config_path)
+        pipeline_mode = config.get("team", {}).get("pipeline", "standalone")
+
+    hotl_info = hotl_available()
+
+    latest_run_id = None
+    latest_state_path = find_latest_state_path()
+    if latest_state_path is not None:
+        with open(latest_state_path) as f:
+            state = json.load(f)
+        latest_run_id = state.get("run_id")
+
+    result = {
+        "config_exists": config_exists,
+        "pipeline_mode": pipeline_mode,
+        "hotl_available": hotl_info["available"],
+        "hotl_active_in_project": hotl_active_in_project(),
+        "generated_agents_exist": generated_agents_exist(),
+        "latest_run_id": latest_run_id,
+    }
     print(json.dumps(result))
 
 
@@ -702,6 +750,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_hotl_sub = p_hotl.add_subparsers(dest="hotl_cmd")
     p_hotl_sub.add_parser("check", help="Check HOTL availability")
 
+    # health
+    sub.add_parser("health", help="Show minimal runtime/project readiness")
+
     # artifact-paths
     sub.add_parser("artifact-paths", help="Show artifact output paths (auto-detects HOTL)")
 
@@ -729,6 +780,14 @@ def main():
             cmd_hotl_check(args)
         else:
             print(json.dumps({"error": "Unknown hotl subcommand"}), file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.command == "health":
+        try:
+            cmd_health(args)
+        except (ValueError, json.JSONDecodeError, OSError, yaml.YAMLError) as e:
+            print(json.dumps({"error": str(e)}), file=sys.stderr)
             sys.exit(1)
         return
 

@@ -15,13 +15,14 @@ ROLES_DIR = Path(__file__).resolve().parent.parent / "roles"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "agenteam.yaml.template"
 
 
-def run_rt(*args, cwd=None) -> subprocess.CompletedProcess:
+def run_rt(*args, cwd=None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     """Run agenteam-rt with given args."""
     return subprocess.run(
         [sys.executable, str(RUNTIME), *args],
         capture_output=True,
         text=True,
         cwd=cwd or os.getcwd(),
+        env={**os.environ, **(env or {})},
     )
 
 
@@ -35,6 +36,13 @@ def make_config(tmp_path: Path, overrides: dict | None = None) -> Path:
     with open(config_path, "w") as f:
         yaml.dump(config, f)
     return config_path
+
+
+def make_home_env(tmp_path: Path) -> dict[str, str]:
+    """Return an isolated HOME override for subprocess tests."""
+    home = tmp_path / "home"
+    home.mkdir()
+    return {"HOME": str(home)}
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +455,71 @@ class TestHotlDetection:
         result = json.loads(r.stdout)
         assert "available" in result
         assert "path" in result
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
+class TestHealthCommand:
+    def test_health_without_config(self, tmp_path):
+        env = make_home_env(tmp_path)
+
+        r = run_rt("health", cwd=str(tmp_path), env=env)
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result == {
+            "config_exists": False,
+            "pipeline_mode": None,
+            "hotl_available": False,
+            "hotl_active_in_project": False,
+            "generated_agents_exist": False,
+            "latest_run_id": None,
+        }
+
+    def test_health_with_config_generated_agents_and_latest_run(self, tmp_path):
+        make_config(tmp_path)
+        env = make_home_env(tmp_path)
+
+        generate_r = run_rt("generate", cwd=str(tmp_path), env=env)
+        assert generate_r.returncode == 0
+
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True)
+
+        older_run_id = "20260329T235959Z"
+        latest_run_id = "20260330T010805Z"
+        for run_id in [older_run_id, latest_run_id]:
+            with open(state_dir / f"{run_id}.json", "w") as f:
+                json.dump({"run_id": run_id}, f)
+
+        r = run_rt("health", cwd=str(tmp_path), env=env)
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result == {
+            "config_exists": True,
+            "pipeline_mode": "standalone",
+            "hotl_available": False,
+            "hotl_active_in_project": False,
+            "generated_agents_exist": True,
+            "latest_run_id": latest_run_id,
+        }
+
+    def test_health_reports_malformed_config_errors_on_stderr(self, tmp_path):
+        env = make_home_env(tmp_path)
+
+        config_path = tmp_path / "agenteam.yaml"
+        with open(config_path, "w") as f:
+            f.write("version: '1'\nteam: [\n")
+
+        r = run_rt("health", cwd=str(tmp_path), env=env)
+
+        assert r.returncode != 0
+        error = json.loads(r.stderr)
+        assert "error" in error
+        assert error["error"]
 
 
 # ---------------------------------------------------------------------------
