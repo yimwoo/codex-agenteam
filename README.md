@@ -29,7 +29,7 @@ Use **Codex CLI** if you want command-style skill invocation.
 Open any project in Codex and ask AgenTeam to set itself up:
 
 ```
-@ATeam show my team
+@ATeam build my team
 ```
 
 On first run, AgenTeam will create `.agenteam/config.yaml` (preferred; legacy `agenteam.yaml` still works), generate the role agents,
@@ -83,11 +83,11 @@ After that, use `$ateam:run` to start work and `$ateam:status` to inspect the cu
 ### 3. First 5 Minutes
 
 1. Install plugin and open your project.
-2. Initialize once with `@ATeam show my team` (App) or `$ateam:init` (CLI).
+2. Initialize once with `@ATeam build my team` (App) or `$ateam:init` (CLI).
 3. Verify setup:
    `.agenteam/config.yaml` exists in your project root (or legacy `agenteam.yaml`)
    `.codex/agents/*.toml` exists for the built-in roles
-   `@ATeam show my team` lists the built-in roles in the app
+   `@ATeam build my team` lists the built-in roles in the app
 4. Start with a real task:
 
 ```

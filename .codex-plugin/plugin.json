@@ -31,7 +31,7 @@
     "category": "Productivity",
     "capabilities": ["Interactive", "Read", "Write"],
     "defaultPrompt": [
-      "Show my team",
+      "Build my team",
       "Refactor this codebase to be more maintainable",
       "Add a security auditor to the team"
     ],

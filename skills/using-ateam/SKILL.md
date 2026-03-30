@@ -23,7 +23,12 @@ cp "$PLUGIN_DIR/templates/agenteam.yaml.template" .agenteam/config.yaml
 python3 "$PLUGIN_DIR/runtime/agenteam_rt.py" generate
 ```
 
-Then show the team to the user:
+Then decide what to do next:
+
+- If the user's request was team setup or "show my team", show the team roster and stop.
+- Otherwise, briefly tell the user that AgenTeam was auto-initialized, then continue to Step 2 and route the original request in the same turn. Do not stop after setup.
+
+If you are showing the team, use:
 
 ```
 Your team is ready! Talk to any role directly:
@@ -44,8 +49,8 @@ Match the user's request to a skill. **You must invoke the skill, not do the wor
 
 | User Says | Invoke |
 |-----------|--------|
-| "run the pipeline", "full workflow on X", "build X end-to-end" | `$ateam:run` |
-| "set up team", "initialize", "configure", "show my team" | `$ateam:init` |
+| "run the pipeline", "full workflow on X", "build X end-to-end", "let's start building X", "start a new project", "build a new project called X", "continue the pipeline", "keep going on X" | `$ateam:run` |
+| "set up team", "initialize", "configure", "build my team", "show my team" | `$ateam:init` |
 | "status", "progress", "what's happening" | `$ateam:status` |
 | "add a role", "add a member", "new team member" | `$ateam:add-member` |
 | "regenerate agents", "sync agents" | `$ateam:generate` |
@@ -87,4 +92,6 @@ But still handle the request if they ask through @ATeam.
 - Individual roles are Codex agents -- users `@` them directly for focused tasks.
 - `@ATeam` handles team-level operations: pipeline, status, adding roles.
 - On first use, show the team roster so users know who they can `@`.
-- **CRITICAL: Writing roles (@Dev, @Qa, custom writers) MUST work on isolated branches, never on the user's current branch.** The assign and run skills handle this via `git-isolate.sh`. If you are routing to a writing role, always go through `$ateam:assign` or `$ateam:run` -- never launch a writing agent directly.
+- For a non-setup request, auto-init is only a prerequisite. Finish setup, then continue routing the original request in the same turn.
+- Never use `$ateam:init` for build/start/continue/resume requests when config already exists.
+- For `$ateam:run` and `$ateam:assign`, the matched skill must launch actual Codex subagents. Do not simulate role outputs in the lead `@ATeam` thread.
