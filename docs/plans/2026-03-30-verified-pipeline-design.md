@@ -33,6 +33,21 @@ Skill (run)  →  runtime verify-plan (JSON)  →  scripts/verify-stage.sh (exec
 - **Scripts execute** verification commands deterministically
 - **Skills orchestrate** the lifecycle (retry loop, gate enforcement, completion)
 
+### Workspace binding
+
+Verification MUST run in the same isolated workspace as the stage work.
+The `verify-plan` output includes a `cwd` field:
+
+- **Branch mode:** `cwd` is the project root (same checkout, agent worked here)
+- **Worktree mode:** `cwd` is the worktree path (e.g., `.ateam-worktrees/dev-add-auth`)
+
+`verify-stage.sh run <command> --cwd <path>` executes the command in the
+specified directory. This prevents verification from running against stale
+code in the controller's workspace.
+
+On failure, the workspace is preserved for debugging (same rule as
+worktree cleanup: dirty = preserved).
+
 ## Config Schema
 
 ### Stage verification
@@ -64,7 +79,7 @@ pipeline:
       max_retries: 0
 ```
 
-### Final verification
+### Final verification (fail-closed)
 
 ```yaml
 final_verify:
@@ -74,6 +89,20 @@ final_verify:
 final_verify_policy: block    # block (default) | warn
 final_verify_max_retries: 1
 ```
+
+**Fail-closed rule:** If `final_verify` is omitted or empty, the runtime
+auto-detects commands using the same repo-signal detection used for stages.
+If auto-detection also finds nothing, `final-verify-plan` returns
+`"policy": "unverified"` and the run skill prints a prominent warning:
+
+> "No final verification commands configured or detected. AgenTeam cannot
+> vouch for this run. Add `final_verify` to your config or install a test
+> framework."
+
+The pipeline still completes (it would be hostile to block with zero
+configured checks), but it never claims verified success. The trust
+promise is explicitly scoped: **AgenTeam vouches for work only when
+verification commands are configured or auto-detected.**
 
 ### Auto-detection (when verify is omitted)
 
@@ -104,6 +133,37 @@ Rules:
 - `dev` never approves its own work (no self-merge)
 - `human` gates are never satisfied by agents
 - Agent gates (`reviewer`, `qa`) can be overridden by `human` if the agent blocks
+
+### Agent gate execution model
+
+When a stage has `gate: reviewer` or `gate: qa`:
+
+1. The stage's primary role(s) complete their work (e.g., dev writes code)
+2. Verification runs (if configured)
+3. The gate agent is dispatched as a **separate subagent** (not the stage actor)
+   - For `gate: reviewer`: dispatch the `reviewer` role with the stage output
+   - For `gate: qa`: dispatch the `qa` role with the stage output
+4. The gate agent produces a verdict: PASS, PASS WITH WARNINGS, or BLOCK
+5. The skill parses the verdict:
+   - PASS or PASS WITH WARNINGS: record `gate: approved` in state, continue
+   - BLOCK: record `gate: rejected` in state, pause for human override
+6. The gate agent is NEVER the same agent that produced the stage work
+   (reviewer on review stage = approving own output = not allowed;
+   in that case, fall back to `gate: human`)
+
+State persistence:
+```json
+{
+  "stages": {
+    "implement": {
+      "gate": "reviewer",
+      "gate_result": "approved",
+      "gate_agent": "reviewer",
+      "gate_verdict": "PASS WITH WARNINGS: 2 WARN findings"
+    }
+  }
+}
+```
 
 ## Runtime Commands (New)
 
@@ -252,7 +312,12 @@ On non-zero exit:
 3. If all pass: print success summary.
 
 4. If any fail and retries remain:
-   - Re-dispatch dev with failure context
+   - Determine repair role(s) from failure context:
+     * If failing files are in dev's write_scope (src/**, lib/**) -> dispatch dev
+     * If failing files are in qa's write_scope (tests/**) -> dispatch qa
+     * If both areas fail -> dispatch dev AND qa (parallel if scoped, serial otherwise)
+     * If unclear -> dispatch dev as fallback (most common case)
+   - Re-dispatch repair role(s) with failure output as context
    - Re-run final_verify
 
 5. If still failing:
@@ -283,6 +348,11 @@ success_criteria:
   - Auto-detection finds pytest/npm/go/cargo/make test commands
   - State file records verify attempts and results
   - Legacy configs without verify fields still work (no verify = skip)
+  - Verification runs in the isolated workspace (branch/worktree cwd)
+  - Final-repair dispatches correct role(s) based on write_scope
+  - Agent gates (reviewer, qa) dispatch a separate agent, not the stage actor
+  - No final_verify configured + no auto-detect = "unverified" warning (not silent pass)
+  - AgenTeam only claims verified success when verify commands are present
 risk_level: medium
 ```
 
