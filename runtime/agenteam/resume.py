@@ -200,6 +200,7 @@ def cmd_resume_plan(args, config: dict) -> None:
         "run_id": run_id,
         "task": state.get("task", ""),
         "status": state.get("status", ""),
+        "pipeline_mode": state.get("pipeline_mode", "standalone"),
         "last_update": last_update,
         "stale": stale,
         "config_hash_match": config_hash_match,

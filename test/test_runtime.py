@@ -3526,6 +3526,14 @@ class TestResume:
         assert result["interrupted_stage"]["verify_safe"] is True
         assert result["interrupted_stage"]["verify_safe_source"] == "config"
 
+    def test_resume_plan_includes_pipeline_mode(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        self._make_stale(tmp_path, run_id, 15)
+        r = run_rt("resume-plan", "--run-id", run_id, cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["pipeline_mode"] == "standalone"
+
 
 # ---------------------------------------------------------------------------
 # HOTL adapter

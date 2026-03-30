@@ -174,7 +174,18 @@ pipeline:
     - name: review
       roles: [reviewer]
       gate: human
+
+  # Pipeline profiles (optional) — right-size the pipeline to the task
+  profiles:
+    quick:
+      stages: [implement, test]
+      hints: [typo, one-line fix, config change, version bump]
+    standard:
+      stages: [design, plan, implement, test, review]
+      hints: [new endpoint, refactor, add feature, fix bug]
 ```
+
+Use profiles with `@ATeam --profile quick fix the typo in README`. Without `--profile`, the full pipeline runs.
 
 ### Branch Isolation
 
