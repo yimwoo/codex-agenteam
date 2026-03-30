@@ -4,4 +4,4 @@ Pure config-resolver and policy-enforcer. Outputs JSON.
 Skills own subagent execution.
 """
 
-__version__ = "2.4.0"
+__version__ = "2.5.0"

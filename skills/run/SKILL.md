@@ -26,6 +26,30 @@ Check for `.agenteam/config.yaml` (or legacy `agenteam.yaml`) in the project roo
 Get the task description from the user. If not provided, ask:
 "What task should the team work on?"
 
+### 2b. Select Profile
+
+If the project config defines pipeline profiles, select one before init:
+
+1. Read `pipeline.profiles` from config (check if `pipeline` key is a dict
+   with a `profiles` sub-key). If no profiles defined, skip this step.
+2. If the user already specified `--profile <name>` in their request, use
+   it directly and skip classification.
+3. If profiles are defined:
+   - Read each profile's `hints` list (advisory examples of task shape)
+   - Select the best-fit profile using judgment over the task description
+     and hints. Do not keyword-match — use hints as examples of the kind
+     of task each profile is designed for.
+   - Announce: "Using profile **quick** (one-line fix). Override with
+     `--profile standard` if needed."
+   - Do not pause for confirmation unless confidence is low or the profile
+     materially shortens the pipeline (e.g., skipping 5 of 7 stages).
+4. If uncertain which profile fits, default to `full` (all stages).
+   Misclassification fails safe.
+5. Pass `--profile <name>` to the init command in step 3.3:
+   ```bash
+   python3 <runtime>/agenteam_rt.py init --task "<task>" --profile <name>
+   ```
+
 ### 3. Branch Isolation
 
 Before initializing the run, set up branch isolation. This applies to
@@ -49,9 +73,10 @@ skip this step (HOTL owns git lifecycle for pipeline runs).
 
 3. **Initialize the run first** (to get run_id):
    ```bash
-   python3 <runtime>/agenteam_rt.py init --task "<task description>"
+   python3 <runtime>/agenteam_rt.py init --task "<task description>" [--profile <name>]
    ```
-   Capture the `run_id` from the output.
+   Include `--profile` if one was selected in step 2b. Capture the
+   `run_id` from the output.
 
 4. **Get branch plan:**
    ```bash
@@ -132,6 +157,24 @@ For each stage in the ordered stage list:
      - read_only: list of read-only roles
      - gate: human or auto
 
+  b2. Transition stage to dispatched:
+     ```bash
+     python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+       --stage <stage> --to dispatched
+     ```
+
+  c0. Check HOTL skill eligibility (before launching any subagent):
+
+     For each role about to be launched:
+     ```bash
+     python3 <runtime>/agenteam_rt.py hotl-skills \
+       --run-id <run_id> --stage <stage> --role <role>
+     ```
+     - For each entry in the `eligible[]` array: append the `inject`
+       text to the subagent's task instructions.
+     - If `hotl_available` is false or `eligible` is empty: no injection,
+       launch with default role instructions.
+
   c. Launch agents:
 
      **If plan has flat "dispatch" key (serial mode):**
@@ -169,20 +212,36 @@ For each stage in the ordered stage list:
      - You must launch actual Codex subagents. Do not keep the work in the
        lead agent and do not simulate what a role "would" say.
 
-  d. Collect outputs:
+  d. Emit stage_dispatched event (after agents launch successfully):
+     ```bash
+     python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
+       --type stage_dispatched --stage <stage> \
+       --data '{"roles": ["<role1>", ...], "isolation": "<mode>"}'
+     ```
+
+  d2. Collect outputs:
      - Gather each role's output
      - Store as context for subsequent stages
 
   e. Verify stage (if configured):
      - Get verify plan:
        python3 <runtime>/agenteam_rt.py verify-plan <stage> --run-id <run_id>
-     - If verify is null: skip to gate check.
+     - If verify is null: skip to gate check (see transition note below).
+     - Transition to verifying:
+       python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to verifying
      - Execute verification in the isolated workspace:
        bash <plugin-dir>/scripts/verify-stage.sh run "<verify>" --cwd "<cwd>"
      - Record result:
        python3 <runtime>/agenteam_rt.py record-verify --run-id <run_id> \
          --stage <stage> --result pass|fail --output "<output>"
-     - If passed: continue to gate check.
+     - If passed:
+       python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to passed
+       Continue to gate check.
+     - If failed:
+       python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to failed
      - If failed and attempts < max_retries:
        Log "Verification failed (attempt N/max). Re-dispatching..."
        Check verify-plan for rework_to:
@@ -195,6 +254,14 @@ For each stage in the ordered stage list:
              - Single-role stage: re-dispatch that role
              - Multi-role stage: match failing files to write_scope
              - All-read-only stage: fail-fast (no repair possible)
+           Before re-dispatching, re-run hotl-skills for each repair role:
+           ```
+           python3 <runtime>/agenteam_rt.py hotl-skills \
+             --run-id <run_id> --stage <stage> --role <repair_role>
+           ```
+           The stage status is now "failed" or "rework", so
+           systematic-debugging becomes eligible. Append any eligible
+           inject text to the repair subagent's instructions.
            Re-dispatch repair role(s) with failure output as context
        Go back to verify
      - If failed and attempts >= max_retries (or no legal repair role):
@@ -225,16 +292,59 @@ For each stage in the ordered stage list:
          Continue to gate.
        If rejected: mark stage failed.
 
-  g. Gate check:
+  g. Gate check and stage completion transitions:
+
+     **Transition paths (all four cases from default pipeline):**
+     - verify + gate (e.g., design): dispatched → verifying → passed → gated → completed
+     - verify + no gate (e.g., implement): dispatched → verifying → passed → completed
+     - no verify + gate (e.g., strategy, plan): dispatched → passed → gated → completed
+     - no verify + no gate (e.g., research): dispatched → completed
+
+     **If verify was null (no verify configured):**
+     - If gate is "human" or "reviewer":
+       python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to passed
+     - If gate is "auto" or no gate:
+       python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to completed
+       (skip gate check, stage is done)
+
+     **Gate evaluation (when gate is not "auto"):**
+     - python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to gated
      - If gate is "human": pause and show the user a summary of the
        stage output. Ask: "Approve this stage? (yes/no/details)"
      - If gate is "reviewer" or "qa": dispatch the gate agent as a
        SEPARATE subagent (never the stage actor). Parse verdict
        (PASS/BLOCK). Record via record-gate. If BLOCK, pause for human.
-     - If gate is "auto": continue to next stage
      - Record gate result:
        python3 <runtime>/agenteam_rt.py record-gate --run-id <run_id> \
          --stage <stage> --gate-type <type> --result approved|rejected
+
+     **After gate approval:**
+     - python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to completed
+
+     **After gate rejection:**
+     - python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to rejected
+
+     **On re-dispatch (retry after failure or rejection):**
+     - python3 <runtime>/agenteam_rt.py transition --run-id <run_id> \
+         --stage <stage> --to dispatched
+
+  f0. Emit stage_completed event (after verify passed + gate approved):
+     ```bash
+     python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
+       --type stage_completed --stage <stage> \
+       --data '{"result": "passed"}'
+     ```
+     On stage failure (verify exhausted, gate rejected, or no repair):
+     ```bash
+     python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
+       --type stage_completed --stage <stage> \
+       --data '{"result": "failed", "reason": "<failure reason>"}'
+     ```
 
   f. Handoff:
      - Pass the collected outputs as context to the next stage
@@ -341,9 +451,21 @@ never modifies HOTL internals.
 ### 8. Completion
 
 Only after the final configured stage completes:
+- Emit run_finished event:
+  ```bash
+  python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
+    --type run_finished --data '{"status": "completed"}'
+  ```
 - Show a summary of what each role produced
 - Show the final state: `python3 <runtime>/agenteam_rt.py status`
 - Suggest next steps (commit, create PR, etc.)
+
+On unrecoverable pipeline failure:
+- Emit run_finished event:
+  ```bash
+  python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
+    --type run_finished --data '{"status": "failed"}'
+  ```
 
 ## Error Handling
 
