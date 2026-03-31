@@ -36,6 +36,11 @@ bash install.sh --local
 2. Go to **Plugins > Local Plugins** and install AgenTeam
 3. Navigate to your project and run `@ATeam build my team`
 
+**For teams:** If your repo already has `.agenteam.team/config.yaml` (committed
+by a teammate), AgenTeam detects it automatically — no init needed. Your team's
+pipeline, roles, and stages are shared. Create `.agenteam/config.yaml` only if
+you need personal overrides (e.g., different model preferences).
+
 ## Next Steps
 
 - [Configuration Reference](configuration.md) -- customize roles, isolation, and pipeline

@@ -8,7 +8,7 @@ import yaml
 
 from .artifacts import cmd_artifact_paths
 from .branch import cmd_branch_plan
-from .config import find_config, load_config, load_config_raw
+from .config import find_config, load_config, load_config_merged_raw
 from .dispatch import (
     cmd_dispatch,
     cmd_policy_check,
@@ -273,12 +273,12 @@ def main() -> None:
         cmd_migrate(args)
         return
 
-    # validate loads config raw so it can report all errors structurally
+    # validate loads merged config raw so it reports against effective config
     if args.command == "validate":
         try:
             cfg_arg = args.config if hasattr(args, "config") and args.config else None
             config_path = find_config(cfg_arg)
-            config = load_config_raw(config_path)
+            config = load_config_merged_raw(config_path)
         except (FileNotFoundError, ValueError) as e:
             print(json.dumps({"error": str(e)}), file=sys.stderr)
             sys.exit(1)

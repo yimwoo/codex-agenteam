@@ -2,7 +2,22 @@
 
 AgenTeam works out of the box with zero config. Customize when you're ready.
 
-Config lives at `.agenteam/config.yaml` in your project root.
+## Config File Locations
+
+AgenTeam supports a two-layer config model for team collaboration:
+
+| File | Purpose | Tracked in git? |
+|------|---------|----------------|
+| `.agenteam.team/config.yaml` | **Team config** — shared pipeline, roles, stages, isolation | Yes |
+| `.agenteam/config.yaml` | **Personal config** — local overrides (model, reasoning_effort) | No (gitignored) |
+| `agenteam.yaml` | Legacy config (still supported) | No (gitignored) |
+
+**How it works:**
+- If only one config exists, it's used as the full config
+- If both team and personal exist, they merge: team is the base, personal overrides apply to allowlisted fields only
+- Personal config is optional — most users only need the team config
+
+**Resolution order:** plugin defaults → team config → personal overrides → effective config
 
 ## Minimal Config
 
@@ -154,6 +169,63 @@ Set in config:
 
 ```yaml
 isolation: worktree
+```
+
+## Team Config (Shared)
+
+For teams, create a shared config that all members use:
+
+```
+@ATeam share-config
+```
+
+This copies your local config to `.agenteam.team/config.yaml`, strips personal
+fields (model, reasoning_effort, system_instructions), and sets `version: "2"`.
+Commit it to git:
+
+```bash
+git add .agenteam.team/
+git commit -m "Add shared AgenTeam team config"
+```
+
+Team members who clone the repo get the shared pipeline, roles, and stages
+automatically — no per-developer setup needed.
+
+## Personal Overrides
+
+Personal config (`.agenteam/config.yaml`) can override a limited set of fields:
+
+| Field | Behavior |
+|-------|----------|
+| `roles.<name>.model` | Replace (use a different model locally) |
+| `roles.<name>.reasoning_effort` | Replace |
+| `roles.<name>.system_instructions` | Append (personal addendum, not replacement) |
+
+**Non-overridable fields** (always from team config):
+- `pipeline.stages`, gates, verify commands
+- `roles.<name>.write_scope`, `can_write`
+- `final_verify`, `final_verify_policy`
+
+**Escape hatch:** Team config can widen the personal allowlist:
+
+```yaml
+# .agenteam.team/config.yaml
+allow_personal_override:
+  - isolation
+```
+
+**Personal config cannot define new roles.** Custom roles must be added to
+the team config.
+
+Example personal override:
+
+```yaml
+# .agenteam/config.yaml
+version: "2"
+roles:
+  dev:
+    model: o4-mini
+    reasoning_effort: medium
 ```
 
 ## Config Migration

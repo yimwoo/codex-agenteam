@@ -8,7 +8,9 @@ import sys
 import time
 from pathlib import Path
 
-from .config import find_config, resolve_team_config
+import yaml
+
+from .config import resolve_team_config
 from .events import append_event
 
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -145,12 +147,13 @@ def cmd_init(args, config: dict) -> None:
     profile = getattr(args, "profile", None)
     stages = resolve_effective_stages(config, profile)
 
-    # Compute config hash for resume drift detection
+    # Compute config hash from effective merged config (not a single file)
+    # This ensures drift detection catches changes in either team or personal layer
     config_hash = ""
     try:
-        config_path = find_config(args.config if hasattr(args, "config") and args.config else None)
-        config_hash = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
-    except (FileNotFoundError, OSError):
+        canonical = yaml.dump(config, default_flow_style=False, sort_keys=True)
+        config_hash = hashlib.sha256(canonical.encode()).hexdigest()
+    except (TypeError, yaml.YAMLError):
         pass
 
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

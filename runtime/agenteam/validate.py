@@ -3,7 +3,7 @@
 import json
 import sys
 
-from .config import resolve_team_config
+from .config import load_config_layers, resolve_team_config
 from .roles import resolve_roles
 from .schema import validate_schema
 from .state import get_pipeline_stages
@@ -41,6 +41,13 @@ def cmd_validate(args, config: dict) -> None:
         result["role_count"] = len(roles)
         result["stage_count"] = len(stages)
         result["profile_count"] = len(profiles)
+        # Include config layer provenance
+        try:
+            cfg_arg = getattr(args, "config", None) or None
+            layers = load_config_layers(cfg_arg)
+            result["layers"] = layers
+        except (FileNotFoundError, ValueError):
+            result["layers"] = None
         print(json.dumps(result))
     else:
         # Backward-compatible summary format

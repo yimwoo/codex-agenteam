@@ -31,7 +31,18 @@ KNOWN_TOP_LEVEL_KEYS = {
     "final_verify",
     "final_verify_policy",
     "final_verify_max_retries",
+    "allow_personal_override",
 }
+
+# Two-layer config: personal override allowlist (role-level fields)
+PERSONAL_OVERRIDE_ALLOWLIST = {"model", "reasoning_effort", "system_instructions"}
+
+# Role-level fields that are NEVER personally overridable
+NON_OVERRIDABLE_ROLE_FIELDS = {"write_scope", "can_write"}
+
+# Directory names
+TEAM_CONFIG_DIR = ".agenteam.team"
+PERSONAL_CONFIG_DIR = ".agenteam"
 
 # Map legacy write mode values to new isolation schema
 ISOLATION_MAP = {"serial": "branch", "scoped": "none", "worktree": "worktree"}

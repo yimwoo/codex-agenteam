@@ -28,10 +28,16 @@ pip install pyyaml toml
 
 ### 2. Check for Existing Config
 
-Look for `.agenteam/config.yaml` first, then legacy `agenteam.yaml`.
+Check for config in this order:
+1. `.agenteam/config.yaml` (personal)
+2. `.agenteam.team/config.yaml` (team shared)
+3. Legacy `agenteam.yaml`
 
-- **If exists:** Ask the user if they want to reconfigure or keep existing config.
-  If keeping, skip to step 4.
+- **If `.agenteam.team/config.yaml` exists (team project):** Use it as the
+  team config. Do not create `.agenteam/config.yaml` — personal overrides
+  are opt-in. Skip to step 4 (validate).
+- **If `.agenteam/config.yaml` or `agenteam.yaml` exists:** Ask the user if
+  they want to reconfigure or keep existing config. If keeping, skip to step 4.
 - **If absent:** Continue to step 3.
 
 ### 3. Create Config
@@ -116,6 +122,18 @@ Try these to get started:
   @ATeam build a simple todo app with tests
   @ATeam add a docs writer to maintain README and API docs
 ```
+
+**Team config suggestion (when no `.agenteam.team/config.yaml` was detected):**
+
+After the starter examples, if the config was created locally (no team
+config exists), append:
+
+```
+Your AgenTeam config is local. To share team settings with
+collaborators, run @ATeam share-config.
+```
+
+Do not show this if `.agenteam.team/config.yaml` already exists.
 
 ## Runtime Path Resolution
 

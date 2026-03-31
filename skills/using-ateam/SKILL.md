@@ -12,9 +12,14 @@ operations**: running the pipeline, showing status, and managing roles.
 
 ## Step 1: Auto-Init
 
-Check if `.agenteam/config.yaml` (or legacy `agenteam.yaml`) exists in the project root.
+Check if any AgenTeam config exists in the project root:
+1. `.agenteam/config.yaml` (personal)
+2. `.agenteam.team/config.yaml` (team shared)
+3. Legacy `agenteam.yaml`
 
-**If missing**, initialize immediately:
+If ANY of these exist, config is present — skip auto-init.
+
+**If ALL are missing**, initialize immediately:
 
 ```bash
 PLUGIN_DIR="$(find ~/.codex/plugins/cache -path '*/ateam' -type d 2>/dev/null | head -1)"
@@ -97,6 +102,7 @@ Match the user's request to a skill. **You must invoke the skill, not do the wor
 | "assign X to Y", "ask X to do Y" | `$ateam:assign` |
 | "standup", "quick status", "what's the team status", "project report" | `$ateam:standup` |
 | "deepdive", "full analysis", "what should we build next", "research and analyze" | `$ateam:deepdive` |
+| "share config", "share team config", "share settings with team" | `$ateam:share-config` |
 
 **For single-role tasks**, remind users they can `@` the role directly:
 "You can talk to @Architect directly for design tasks!"

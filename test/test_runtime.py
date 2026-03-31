@@ -5237,3 +5237,253 @@ class TestHistory:
         assert r.returncode == 0
         entries = json.loads(r.stdout)
         assert entries == []
+
+
+# ---------------------------------------------------------------------------
+# Two-layer config (team + personal)
+# ---------------------------------------------------------------------------
+
+
+class TestTwoLayerConfig:
+    """Tests for .agenteam.team/ + .agenteam/ config merge."""
+
+    def _make_team_config(self, tmp_path, config_dict):
+        team_dir = tmp_path / ".agenteam.team"
+        team_dir.mkdir(parents=True, exist_ok=True)
+        config_path = team_dir / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config_dict, f)
+        return config_path
+
+    def _make_personal_config(self, tmp_path, config_dict):
+        personal_dir = tmp_path / ".agenteam"
+        personal_dir.mkdir(parents=True, exist_ok=True)
+        config_path = personal_dir / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config_dict, f)
+        return config_path
+
+    def test_team_only(self, tmp_path):
+        """Team config only, no personal — works as full config."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "branch",
+                "pipeline": {"stages": []},
+            },
+        )
+        r = run_rt("roles", "list", cwd=str(tmp_path))
+        assert r.returncode == 0
+        roles = json.loads(r.stdout)
+        assert "architect" in roles
+
+    def test_personal_only(self, tmp_path):
+        """Personal only, no team — backward compatible."""
+        make_config(tmp_path)
+        r = run_rt("roles", "list", cwd=str(tmp_path))
+        assert r.returncode == 0
+        roles = json.loads(r.stdout)
+        assert "architect" in roles
+
+    def test_both_merge(self, tmp_path):
+        """Team + personal: personal model override applied."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "branch",
+                "roles": {"dev": {"model": "team-model"}},
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {"dev": {"model": "personal-model"}},
+            },
+        )
+        r = run_rt("roles", "show", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        role = json.loads(r.stdout)
+        assert role["model"] == "personal-model"
+
+    def test_blocked_override(self, tmp_path):
+        """Personal write_scope override is blocked."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "dev": {"write_scope": ["src/**"]},
+                },
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "dev": {"write_scope": ["everything/**"]},
+                },
+            },
+        )
+        r = run_rt("roles", "show", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        role = json.loads(r.stdout)
+        assert role["write_scope"] == ["src/**"]
+        assert "blocked" in r.stderr.lower()
+
+    def test_unknown_role_in_personal(self, tmp_path):
+        """Personal config with unknown role emits warning."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "mystery_role": {"model": "fast"},
+                },
+            },
+        )
+        r = run_rt("roles", "list", cwd=str(tmp_path))
+        assert r.returncode == 0
+        assert "unknown role" in r.stderr.lower() or "mystery_role" in r.stderr
+
+    def test_system_instructions_append(self, tmp_path):
+        """Personal system_instructions appends, not replaces."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "dev": {"system_instructions": "Team instructions."},
+                },
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "dev": {"system_instructions": "Personal addendum."},
+                },
+            },
+        )
+        r = run_rt("roles", "show", "dev", cwd=str(tmp_path))
+        assert r.returncode == 0
+        role = json.loads(r.stdout)
+        instructions = role.get("system_instructions", "")
+        assert "Team instructions." in instructions
+        assert "Personal addendum." in instructions
+
+    def test_allow_personal_override_escape_hatch(self, tmp_path):
+        """Team allows personal isolation override via escape hatch."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "branch",
+                "allow_personal_override": ["isolation"],
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "worktree",
+            },
+        )
+        r = run_rt(
+            "branch-plan",
+            "--task",
+            "t",
+            "--role",
+            "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["mode"] == "worktree"
+
+    def test_validate_uses_merged(self, tmp_path):
+        """validate --format diagnostics reflects merged state."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "branch",
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {"dev": {"model": "fast-model"}},
+            },
+        )
+        r = run_rt(
+            "validate",
+            "--format",
+            "diagnostics",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data["valid"] is True
+        # Layers info should be present
+        layers = data.get("layers")
+        assert layers is not None
+        assert layers["team_config"] is not None
+        assert layers["personal_config"] is not None
+        assert layers["effective_source"] == "merged"
+
+    def test_config_hash_effective(self, tmp_path):
+        """config_hash changes when either layer changes."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "pipeline": {"stages": []},
+            },
+        )
+        r1 = run_rt("init", "--task", "t1", cwd=str(tmp_path))
+        assert r1.returncode == 0
+        hash1 = json.loads(r1.stdout)["config_hash"]
+
+        # Change team config
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "isolation": "worktree",
+                "pipeline": {"stages": []},
+            },
+        )
+        r2 = run_rt("init", "--task", "t2", cwd=str(tmp_path))
+        assert r2.returncode == 0
+        hash2 = json.loads(r2.stdout)["config_hash"]
+        assert hash1 != hash2
+
+    def test_find_config_fallback_to_team(self, tmp_path):
+        """When no personal config, find_config returns team path."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "pipeline": {"stages": []},
+            },
+        )
+        r = run_rt("validate", cwd=str(tmp_path))
+        assert r.returncode == 0
