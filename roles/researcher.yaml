@@ -33,3 +33,8 @@ system_instructions: |
   - Write reports to docs/research/ with descriptive filenames
   - Focus on what actually works in practice, not theoretical concerns
   - Flag when information is uncertain or sources conflict
+
+  ## Citation Format
+  - Use markdown links for all citations: [Title](URL)
+  - Group citations inline with findings, not in a separate bibliography
+  - When comparing alternatives, cite the source for each claim

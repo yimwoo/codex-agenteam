@@ -415,6 +415,38 @@ For each stage in the ordered stage list:
      - If `hotl_available` is false or `eligible` is empty: no injection,
        launch with default role instructions.
 
+  c0.5. Build a role-context block for each launched role:
+
+     Gather the role's static contract:
+     ```bash
+     python3 <runtime>/agenteam_rt.py roles show <role>
+     ```
+     Use the returned `handoff_contract` to tell the role what it is expected
+     to consume, produce, and who reads its output next.
+
+     Gather the stage's dynamic verification context:
+     ```bash
+     python3 <runtime>/agenteam_rt.py verify-plan <stage> --run-id <run_id>
+     ```
+     If a verify command is present, append it to the role context block.
+     This is especially important for QA so it writes tests the pipeline can
+     actually discover and run.
+
+     Resolve artifact paths for prior-stage artifact discovery:
+     ```bash
+     python3 <runtime>/agenteam_rt.py artifact-paths
+     ```
+     Use the returned `paths` map to scan for prior-stage artifacts.
+     This auto-detects standalone vs HOTL mode:
+     - Standalone: architect → `docs/designs/`, pm → `docs/strategies/`
+     - HOTL: architect → `docs/plans/`, dev plans → `./`
+
+     Do NOT hardcode directory paths — always use the runtime-resolved
+     paths so the context block is correct in both modes.
+
+     Include the most relevant prior-stage artifacts or summaries already
+     collected in step d2. Keep this block short and specific.
+
   c. Launch agents:
 
      **If plan has flat "dispatch" key (serial mode):**
@@ -449,6 +481,8 @@ For each stage in the ordered stage list:
        .codex/agents/architect.toml)
      - Pass the task description and any outputs from previous stages
        as context to the agent
+     - Append the role-context block from step c0.5 to the task prompt so
+       static role instructions are paired with run-specific context
      - You must launch actual Codex subagents. Do not keep the work in the
        lead agent and do not simulate what a role "would" say.
 
