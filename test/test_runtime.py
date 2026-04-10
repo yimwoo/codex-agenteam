@@ -5504,8 +5504,13 @@ class TestSkippedStatus:
     def test_pending_to_skipped(self, tmp_path):
         run_id = self._init_run(tmp_path)
         r = run_rt(
-            "transition", "--run-id", run_id,
-            "--stage", "test", "--to", "skipped",
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "test",
+            "--to",
+            "skipped",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -5515,24 +5520,57 @@ class TestSkippedStatus:
 
     def test_skipped_is_terminal(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        run_rt("transition", "--run-id", run_id,
-               "--stage", "test", "--to", "skipped", cwd=str(tmp_path))
-        r = run_rt("transition", "--run-id", run_id,
-                    "--stage", "test", "--to", "dispatched", cwd=str(tmp_path))
+        run_rt(
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "test",
+            "--to",
+            "skipped",
+            cwd=str(tmp_path),
+        )
+        r = run_rt(
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "test",
+            "--to",
+            "dispatched",
+            cwd=str(tmp_path),
+        )
         assert r.returncode != 0
         assert "Invalid transition" in r.stderr
 
     def test_skipped_does_not_break_dispatched(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        r = run_rt("transition", "--run-id", run_id,
-                    "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        r = run_rt(
+            "transition",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--to",
+            "dispatched",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
 
     def test_set_stage_field_updates_state(self, tmp_path):
         run_id = self._init_run(tmp_path)
-        r = run_rt("set-stage-field", "--run-id", run_id,
-                    "--stage", "test", "--field", "skip_reason",
-                    "--value", "docs_only_change", cwd=str(tmp_path))
+        r = run_rt(
+            "set-stage-field",
+            "--run-id",
+            run_id,
+            "--stage",
+            "test",
+            "--field",
+            "skip_reason",
+            "--value",
+            "docs_only_change",
+            cwd=str(tmp_path),
+        )
         assert r.returncode == 0
         # Verify in state file
         state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"

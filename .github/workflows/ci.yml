@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r runtime/requirements.txt
-          pip install ruff pytest pip-audit
+          pip install "ruff>=0.15,<0.16" pytest pip-audit
 
       - name: Ruff lint (includes security rules)
         run: ruff check runtime/ test/
