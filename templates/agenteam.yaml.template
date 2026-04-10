@@ -14,6 +14,20 @@ final_verify:
 # final_verify_max_retries: 1
 
 # --- Role overrides (deep-merged with built-in defaults) ---
+# Model routing: analysis roles benefit from strong reasoning models,
+# execution roles benefit from fast coding models. Model selection is
+# a personal override (share-config strips it from team config).
+#
+# Analysis roles (uncomment in personal config):
+#   researcher:
+#     model: o3-pro            # strong reasoning for research
+#   pm:
+#     model: o3-pro            # strong reasoning for strategy
+#   architect:
+#     model: o3-pro            # strong reasoning for design
+#   reviewer:
+#     model: o3-pro            # strong reasoning for review
+
 roles:
   dev:
     model: gpt-5.3-codex

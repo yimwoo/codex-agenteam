@@ -40,8 +40,8 @@ Infer as much as possible from the description:
 | `participates_in` | Match to pipeline stages: research, strategy, design, plan, implement, test, review |
 | `can_write` | Yes if the role creates/modifies files; no if it only analyzes |
 | `write_scope` | Infer from what the role writes (docs, src, tests, configs) |
-| `model` | Omit to inherit the user's default model, or set `gpt-5.3-codex` for coding-heavy roles |
-| `reasoning_effort` | high for analysis roles, medium for writing roles |
+| `model` | Analysis roles (research, review, design): suggest strong reasoning model (e.g., `o3-pro`). Execution roles (coding, testing): suggest fast coding model (e.g., `gpt-5.3-codex`). Omit to inherit platform default. Model is a personal override — `share-config` strips it. |
+| `reasoning_effort` | high for analysis roles, medium for execution/writing roles |
 | `system_instructions` | Generate focused instructions from the role's domain |
 
 ### 3. Team Size Check

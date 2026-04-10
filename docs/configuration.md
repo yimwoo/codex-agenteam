@@ -171,6 +171,36 @@ Set in config:
 isolation: worktree
 ```
 
+## Model Routing
+
+Different roles benefit from different model strengths. Analysis roles (researcher, pm, architect, reviewer) make judgment calls and evaluate trade-offs — they benefit from strong reasoning models. Execution roles (dev, qa) write code and tests — they benefit from fast coding models.
+
+| Role Class | Examples | Recommended Model Type |
+|-----------|----------|----------------------|
+| Analysis | researcher, pm, architect, reviewer | Strong reasoning (e.g., `o3-pro`, `claude-sonnet-4-5`) |
+| Execution | dev, qa | Fast coding (e.g., `gpt-5.3-codex`, `claude-sonnet-4-5`) |
+
+Model selection is a **personal override** — `share-config` strips `model` and `reasoning_effort` from team config because model availability varies by platform and API key.
+
+```yaml
+# In .agenteam/config.yaml (personal)
+roles:
+  architect:
+    model: o3-pro              # strong reasoning for design
+  researcher:
+    model: o3-pro              # strong reasoning for research
+  dev:
+    model: gpt-5.3-codex       # fast coding for implementation
+  qa:
+    model: gpt-5.3-codex       # fast coding for tests
+```
+
+**When to override the defaults:**
+- **Budget-conscious**: use the same fast model for all roles
+- **High-stakes design**: use the strongest available model for architect
+- **Large codebase**: prefer models with large context windows for researcher
+- **Custom roles**: match the model to the role's primary job (analysis vs execution)
+
 ## Team Config (Shared)
 
 For teams, create a shared config that all members use:
