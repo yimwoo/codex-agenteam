@@ -27,6 +27,9 @@ final_verify:
 #     model: o3-pro            # strong reasoning for design
 #   reviewer:
 #     model: o3-pro            # strong reasoning for review
+#
+# Cross-model review: use different models for dev and reviewer
+# to avoid sycophantic reviews. See docs/configuration.md.
 
 roles:
   dev:

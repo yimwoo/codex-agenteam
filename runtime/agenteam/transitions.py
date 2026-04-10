@@ -77,6 +77,13 @@ def transition(run_id: str, stage: str, to_status: str) -> dict:
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     state["last_update"] = now
 
+    # Stage timestamp writes for progress tracking
+    if to_status == "dispatched":
+        stages[stage]["started_at"] = now
+        state["current_stage"] = stage
+    if to_status in ("completed", "skipped"):
+        stages[stage]["completed_at"] = now
+
     with open(state_path, "w") as f:
         json.dump(state, f, indent=2)
 

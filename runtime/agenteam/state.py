@@ -439,6 +439,82 @@ def cmd_stage_baseline(args, config: dict) -> None:
         sys.exit(1)
 
 
+def _format_elapsed(start_iso: str, end_iso: str | None = None) -> str:
+    """Format elapsed time between two ISO timestamps (or start to now)."""
+    from datetime import datetime, timezone
+
+    try:
+        start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        if end_iso:
+            end = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+        else:
+            end = datetime.now(timezone.utc)
+        delta = int((end - start).total_seconds())
+        minutes, seconds = divmod(max(delta, 0), 60)
+        return f"{minutes}m {seconds:02d}s"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _build_progress_view(state: dict, run_id: str) -> dict:
+    """Build a compact progress view from state + last event."""
+    from .events import list_events
+
+    # Run-level elapsed
+    started_at = state.get("started_at", "")
+    elapsed = _format_elapsed(started_at) if started_at else ""
+
+    # Stage summaries
+    stage_order = state.get("stage_order", list(state.get("stages", {}).keys()))
+    stages_map = state.get("stages", {})
+    stages_list = []
+    for name in stage_order:
+        s = stages_map.get(name, {})
+        entry: dict = {"name": name, "status": s.get("status", "pending")}
+        s_started = s.get("started_at")
+        s_completed = s.get("completed_at")
+        if s_started:
+            entry["elapsed"] = _format_elapsed(s_started, s_completed)
+        stages_list.append(entry)
+
+    # Current stage details
+    current_name = state.get("current_stage")
+    current_stage = None
+    if current_name and current_name in stages_map:
+        cs = stages_map[current_name]
+        current_stage = {
+            "name": current_name,
+            "status": cs.get("status", "pending"),
+        }
+        cs_started = cs.get("started_at")
+        if cs_started:
+            current_stage["elapsed"] = _format_elapsed(cs_started, cs.get("completed_at"))
+        verify_attempts = cs.get("verify_attempts", [])
+        if verify_attempts:
+            current_stage["verify_attempt"] = len(verify_attempts)
+        max_retries = cs.get("max_retries", 0)
+        if max_retries:
+            current_stage["max_retries"] = max_retries
+
+    # Last event
+    last_event = None
+    events = list_events(run_id, last_n=1)
+    if events:
+        last_event = events[0]
+
+    return {
+        "run_id": run_id,
+        "task": state.get("task", ""),
+        "profile": state.get("profile"),
+        "status": state.get("status", "unknown"),
+        "elapsed": elapsed,
+        "current_stage": current_stage,
+        "stages": stages_list,
+        "active_lock": state.get("write_locks", {}).get("active"),
+        "last_event": last_event,
+    }
+
+
 def cmd_status(args, config: dict) -> None:
     """Show current run status."""
     from .memory import build_visible_memory
@@ -467,6 +543,11 @@ def cmd_status(args, config: dict) -> None:
             print(json.dumps({"error": "No runs found"}), file=sys.stderr)
             sys.exit(1)
 
-    result = dict(state)
-    result["memory"] = build_visible_memory(config, current_run_id=state.get("run_id"))
-    print(json.dumps(result, indent=2))
+    if getattr(args, "progress", False):
+        run_id = state.get("run_id", getattr(args, "run_id", ""))
+        progress = _build_progress_view(state, run_id)
+        print(json.dumps(progress, indent=2))
+    else:
+        result = dict(state)
+        result["memory"] = build_visible_memory(config, current_run_id=state.get("run_id"))
+        print(json.dumps(result, indent=2))

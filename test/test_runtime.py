@@ -6060,3 +6060,108 @@ class TestSkippedStatus:
         assert test_stage["status"] == "skipped"
         assert test_stage["skip_reason"] == "docs_only_change"
         assert test_stage["skipped_at"] == "2026-04-09T12:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# Run observability (v3.0)
+# ---------------------------------------------------------------------------
+
+
+class TestTransitionTimestamps:
+    def _init_run(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt("init", "--task", "timestamp test", cwd=str(tmp_path))
+        assert r.returncode == 0
+        return json.loads(r.stdout)["run_id"]
+
+    def test_transition_to_dispatched_sets_started_at(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
+        with open(state_path) as f:
+            state = json.load(f)
+        assert "started_at" in state["stages"]["implement"]
+        assert state["stages"]["implement"]["started_at"].endswith("Z")
+
+    def test_transition_to_dispatched_advances_current_stage(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
+        with open(state_path) as f:
+            state = json.load(f)
+        assert state["current_stage"] == "implement"
+
+    def test_transition_to_completed_sets_completed_at(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "completed", cwd=str(tmp_path))
+        state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
+        with open(state_path) as f:
+            state = json.load(f)
+        assert "completed_at" in state["stages"]["implement"]
+
+
+class TestStatusProgress:
+    def _init_run(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt("init", "--task", "progress test", cwd=str(tmp_path))
+        assert r.returncode == 0
+        return json.loads(r.stdout)["run_id"]
+
+    def test_status_progress_returns_compact_view(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        r = run_rt("status", run_id, "--progress", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert "elapsed" in result
+        assert "current_stage" in result
+        assert "stages" in result
+        assert result["current_stage"]["name"] == "implement"
+
+    def test_status_progress_includes_last_event(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt("status", run_id, "--progress", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["last_event"] is not None
+        assert result["last_event"]["type"] == "run_started"
+
+    def test_status_without_progress_unchanged(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt("status", run_id, cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        # Raw state has stages as a dict, not a list
+        assert isinstance(result["stages"], dict)
+        assert "run_id" in result
+
+    def test_status_progress_stage_elapsed(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "dispatched", cwd=str(tmp_path))
+        run_rt("transition", "--run-id", run_id, "--stage", "implement", "--to", "completed", cwd=str(tmp_path))
+        r = run_rt("status", run_id, "--progress", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        impl = [s for s in result["stages"] if s["name"] == "implement"][0]
+        assert "elapsed" in impl
+
+
+class TestEventTail:
+    def test_event_tail_exits_on_run_finished(self, tmp_path):
+        # Create a JSONL file with events including run_finished
+        events_dir = tmp_path / ".agenteam" / "events"
+        events_dir.mkdir(parents=True, exist_ok=True)
+        events_file = events_dir / "test-tail.jsonl"
+        events = [
+            '{"ts":"2026-04-10T12:00:00Z","type":"run_started","run_id":"test-tail","stage":null,"data":{"task":"t","pipeline_mode":"standalone"}}',
+            '{"ts":"2026-04-10T12:01:00Z","type":"stage_dispatched","run_id":"test-tail","stage":"implement","data":{"roles":["dev"],"isolation":"branch"}}',
+            '{"ts":"2026-04-10T12:02:00Z","type":"run_finished","run_id":"test-tail","stage":null,"data":{"status":"completed"}}',
+        ]
+        events_file.write_text("\n".join(events) + "\n")
+
+        r = run_rt("event", "tail", "--run-id", "test-tail", cwd=str(tmp_path))
+        assert r.returncode == 0
+        lines = [l for l in r.stdout.strip().split("\n") if l]
+        assert len(lines) == 3
+        assert "run_finished" in lines[-1]

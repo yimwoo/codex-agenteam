@@ -557,12 +557,21 @@ For each stage in the ordered stage list:
      - You must launch actual Codex subagents. Do not keep the work in the
        lead agent and do not simulate what a role "would" say.
 
-  d. Emit stage_dispatched event (after agents launch successfully):
+  d. Emit stage_dispatched event and progress snapshot:
      ```bash
      python3 <runtime>/agenteam_rt.py event append --run-id <run_id> \
        --type stage_dispatched --stage <stage> \
        --data '{"roles": ["<role1>", ...], "isolation": "<mode>"}'
+     python3 <runtime>/agenteam_rt.py status <run_id> --progress
      ```
+     Display the progress snapshot to the user so they can see
+     pipeline progress during execution.
+
+     **Progress emission rule:** After every stage transition (dispatch,
+     verify result, gate decision, completion, skip), emit the progress
+     snapshot via `status --progress`. This gives users in-thread
+     visibility into pipeline state without requiring a separate
+     terminal or polling loop.
 
   d2. Collect outputs:
      - Gather each role's output

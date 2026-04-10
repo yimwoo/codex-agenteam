@@ -137,3 +137,45 @@ def cmd_event_list(args, config: dict | None = None) -> None:
 
     events = list_events(run_id, type_filter, stage_filter, last_n)
     print(json.dumps(events))
+
+
+def cmd_event_tail(args, config: dict | None = None) -> None:
+    """Stream events from JSONL as they're appended. Exits on run_finished or Ctrl-C."""
+    run_id = args.run_id
+    events_path = Path.cwd() / ".agenteam" / "events" / f"{run_id}.jsonl"
+
+    if not events_path.exists():
+        print(json.dumps({"error": f"No events for run {run_id}"}), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(events_path) as f:
+            # Print all existing events first
+            for line in f:
+                line = line.strip()
+                if line:
+                    print(line, flush=True)
+                    try:
+                        event = json.loads(line)
+                        if event.get("type") == "run_finished":
+                            return
+                    except json.JSONDecodeError:
+                        pass
+
+            # Then tail for new events
+            while True:
+                line = f.readline()
+                if line:
+                    line = line.strip()
+                    if line:
+                        print(line, flush=True)
+                        try:
+                            event = json.loads(line)
+                            if event.get("type") == "run_finished":
+                                return
+                        except json.JSONDecodeError:
+                            pass
+                else:
+                    time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass

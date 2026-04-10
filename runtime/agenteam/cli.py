@@ -16,7 +16,7 @@ from .dispatch import (
     cmd_roles_show,
     cmd_scope_audit,
 )
-from .events import cmd_event_append, cmd_event_list
+from .events import cmd_event_append, cmd_event_list, cmd_event_tail
 from .gates import cmd_gate_eval
 from .generate import cmd_generate
 from .hotl import cmd_health, cmd_hotl_check
@@ -82,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     # status
     p_status = sub.add_parser("status", help="Show run status")
     p_status.add_argument("run_id", nargs="?", default=None)
+    p_status.add_argument("--progress", action="store_true", default=False, help="Compact progress view")
 
     # policy
     p_policy = sub.add_parser("policy", help="Policy commands")
@@ -214,6 +215,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_event_list.add_argument("--type", default=None)
     p_event_list.add_argument("--stage", default=None)
     p_event_list.add_argument("--last", type=int, default=None)
+    p_event_tail = p_event_sub.add_parser("tail", help="Stream events as they're appended")
+    p_event_tail.add_argument("--run-id", dest="run_id", required=True)
 
     # history
     p_history = sub.add_parser("history", help="Run history commands")
@@ -252,6 +255,8 @@ def main() -> None:
             cmd_event_append(args)
         elif args.event_cmd == "list":
             cmd_event_list(args)
+        elif args.event_cmd == "tail":
+            cmd_event_tail(args)
         else:
             print(json.dumps({"error": "Unknown event subcommand"}), file=sys.stderr)
             sys.exit(1)

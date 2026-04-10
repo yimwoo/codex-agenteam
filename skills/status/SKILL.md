@@ -11,31 +11,42 @@ Display the current state of the team's work.
 
 ### 1. Get Status
 
+Use the `--progress` flag for a compact, human-friendly view:
+
+```bash
+python3 <runtime>/agenteam_rt.py status --progress
+```
+
+If the user specifically asks for raw JSON state, use without `--progress`:
 ```bash
 python3 <runtime>/agenteam_rt.py status
 ```
 
 ### 2. Format Output
 
-Display the run state in a readable format:
+Display the progress view in a readable format:
 
 ```
-AgenTeam: <team-name>
-Pipeline: <mode>
+AgenTeam Run: <run-id>
 Task: <task description>
-Run: <run-id>
+Profile: <profile or "full">
+Status: <running|completed|failed|stopped>
+Elapsed: <Nm Ss>
 
 Stages:
-  design     ✓ completed  [architect]        gate: approved
-  plan       ✓ completed  [architect]        gate: approved
-  implement  → in_progress [dev]     write_lock: active
-  test       · pending     [qa]
-  review     · pending     [reviewer]
+  research   ✓ completed  (0m 45s)
+  strategy   ✓ completed  (0m 30s)
+  design     ✓ completed  (1m 02s)
+  implement  → verifying   (1m 15s)  [verify attempt 2/3]
+  test       · pending
+  review     · pending
 
-Write Policy: serial
 Active Lock: dev
-Queue: (empty)
+Last Event: stage_verified (implement) — fail, attempt 2
 ```
+
+The progress view includes elapsed times per stage, the current
+verify attempt if applicable, and the most recent event for context.
 
 ### 3. No Active Run
 

@@ -201,6 +201,20 @@ roles:
 - **Large codebase**: prefer models with large context windows for researcher
 - **Custom roles**: match the model to the role's primary job (analysis vs execution)
 
+### Cross-Model Review
+
+Using the same model for both dev (writing code) and reviewer (reviewing code) can produce sycophantic reviews — the reviewer tends to approve its own model's patterns. For higher-quality reviews, use different models:
+
+```yaml
+roles:
+  dev:
+    model: gpt-5.3-codex       # writes code
+  reviewer:
+    model: o3-pro              # reviews with different reasoning
+```
+
+This is especially valuable for security-sensitive work where independent review matters most.
+
 ## Team Config (Shared)
 
 For teams, create a shared config that all members use:
