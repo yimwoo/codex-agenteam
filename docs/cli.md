@@ -53,6 +53,8 @@ agenteam-rt init --task "add auth" --profile quick
 agenteam-rt dispatch implement --task "add auth" --run-id <id>
 
 # Check run status for latest compatible local run
+# Includes a memory block with concise carry-forward lessons from
+# compatible prior runs when available
 agenteam-rt status
 
 # Check run status for a specific run
@@ -120,6 +122,10 @@ agenteam-rt run-report --run-id <id>
 
 # Show runtime/project readiness
 agenteam-rt health
+
+# Assemble standup summary with current health, dispatch hints, and
+# compatible carry-forward memory
+agenteam-rt standup
 
 # Generate .codex/agents/*.toml from config
 agenteam-rt generate

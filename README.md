@@ -62,6 +62,8 @@ Need a specialist? `@ATeam add a security auditor that focuses on OWASP top 10`
 
 Runtime run state lives under `.agenteam/state/` and is local-only. Default status/standup behavior uses the latest compatible run state for the current role config and ignores stale legacy snapshots.
 
+From `v2.11.2`, `status` and `standup` also surface concise carry-forward memory from compatible prior runs, so lessons like verify failures and rework loops are visible without opening history files by hand.
+
 ---
 
 ## Why AgenTeam?

@@ -441,6 +441,8 @@ def cmd_stage_baseline(args, config: dict) -> None:
 
 def cmd_status(args, config: dict) -> None:
     """Show current run status."""
+    from .memory import build_visible_memory
+
     if args.run_id:
         state_path = Path.cwd() / ".agenteam" / "state" / f"{args.run_id}.json"
         if not state_path.exists():
@@ -465,4 +467,6 @@ def cmd_status(args, config: dict) -> None:
             print(json.dumps({"error": "No runs found"}), file=sys.stderr)
             sys.exit(1)
 
-    print(json.dumps(state, indent=2))
+    result = dict(state)
+    result["memory"] = build_visible_memory(config, current_run_id=state.get("run_id"))
+    print(json.dumps(result, indent=2))

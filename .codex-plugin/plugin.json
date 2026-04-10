@@ -1,6 +1,6 @@
 {
   "name": "ateam",
-  "version": "2.11.1",
+  "version": "2.11.2",
   "description": "Specialist AI agents orchestrated as a configurable team pipeline for Codex.",
   "author": {
     "name": "Yiming Wu",

@@ -4,6 +4,7 @@ import json
 import time
 
 from .artifacts import resolve_artifact_paths_for_config
+from .memory import build_visible_memory
 from .roles import resolve_roles
 from .state import find_latest_compatible_state
 
@@ -83,6 +84,8 @@ def cmd_standup(args, config: dict) -> None:
         }
         stages_summary = state.get("stages", {})
 
+    memory = build_visible_memory(config, current_run_id=state.get("run_id") if state else None)
+
     # Artifact paths
     artifact_paths = resolve_artifact_paths_for_config(config)
 
@@ -127,6 +130,7 @@ def cmd_standup(args, config: dict) -> None:
         "roles": role_names,
         "stages": stages_summary,
         "artifact_paths": artifact_paths,
+        "memory": memory,
         "dispatch_mode": dispatch_mode,
         "output_path": output_path,
         "warnings": warnings,

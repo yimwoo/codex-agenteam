@@ -63,6 +63,34 @@ def discoverable_state(run_id: str, **overrides) -> dict:
     return state
 
 
+def write_history_entry(tmp_path: Path, run_id: str, lessons: dict, task: str = "prior task") -> None:
+    """Write a synthetic history entry for visible-memory tests."""
+    history_dir = tmp_path / ".agenteam" / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "run_id": run_id,
+        "task": task,
+        "status": "completed",
+        "profile": None,
+        "stages": [],
+        "rework_history": [],
+        "lessons": {
+            "verify_failures": [],
+            "rework_edges": [],
+            "gate_rejections": [],
+            "gate_overrides": [],
+            "skipped_stages": [],
+            "final_verify_passed": True,
+            "total_stages": 7,
+            "completed_stages": 7,
+            "profile_used": None,
+            **lessons,
+        },
+    }
+    with open(history_dir / f"{run_id}.json", "w") as f:
+        json.dump(entry, f, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Config loading & validation
 # ---------------------------------------------------------------------------
@@ -409,6 +437,86 @@ class TestInitAndState:
         assert r.returncode != 0
         assert "No runs found" in r.stderr
 
+    def test_status_includes_visible_memory_from_compatible_history(self, tmp_path):
+        make_config(tmp_path)
+        init_r = run_rt("init", "--task", "current task", cwd=str(tmp_path))
+        assert init_r.returncode == 0
+        current_run_id = json.loads(init_r.stdout)["run_id"]
+
+        prior_run_id = "20260401T000001Z"
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / f"{prior_run_id}.json", "w") as f:
+            json.dump(
+                discoverable_state(
+                    prior_run_id,
+                    task="prior task",
+                    status="completed",
+                    stages={"implement": {"status": "completed", "roles": ["dev"], "gate": "auto"}},
+                ),
+                f,
+            )
+        write_history_entry(
+            tmp_path,
+            prior_run_id,
+            {
+                "verify_failures": [
+                    {"stage": "implement", "attempts": 2, "final_result": "pass"},
+                ]
+            },
+        )
+
+        r = run_rt("status", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["run_id"] == current_run_id
+        assert "memory" in result
+        assert len(result["memory"]["items"]) == 1
+        assert result["memory"]["items"][0]["type"] == "verify_failure"
+        assert result["memory"]["items"][0]["source_run_id"] == prior_run_id
+        assert result["memory"]["items"][0]["stage"] == "implement"
+
+    def test_status_memory_ignores_incompatible_history_state(self, tmp_path):
+        make_config(tmp_path)
+        init_r = run_rt("init", "--task", "current task", cwd=str(tmp_path))
+        assert init_r.returncode == 0
+
+        prior_run_id = "20260401T000001Z"
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / f"{prior_run_id}.json", "w") as f:
+            json.dump(
+                discoverable_state(
+                    prior_run_id,
+                    task="legacy task",
+                    status="completed",
+                    stages={
+                        "implement": {
+                            "status": "completed",
+                            "roles": ["implementer"],
+                            "gate": "auto",
+                        }
+                    },
+                ),
+                f,
+            )
+        write_history_entry(
+            tmp_path,
+            prior_run_id,
+            {
+                "gate_rejections": [
+                    {"stage": "review", "gate_type": "human"},
+                ]
+            },
+            task="legacy task",
+        )
+
+        r = run_rt("status", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["memory"]["items"] == []
+        assert result["memory"]["summary"] == "No compatible prior memory."
+
     def test_status_no_runs(self, tmp_path):
         make_config(tmp_path)
         r = run_rt("status", cwd=str(tmp_path))
@@ -714,6 +822,7 @@ class TestStandup:
         assert result["dispatch_mode"] is False
         assert "roles" in result
         assert "artifact_paths" in result
+        assert result["memory"]["items"] == []
         assert "output_path" in result
         assert result["output_path"].startswith("docs/meetings/")
         assert result["output_path"].endswith("-standup.md")
@@ -736,6 +845,43 @@ class TestStandup:
         assert result["run"]["current_stage"] == "research"
         assert "design" in result["stages"]
         assert result["stages"]["design"]["status"] == "pending"
+
+    def test_standup_includes_visible_memory(self, tmp_path):
+        make_config(tmp_path)
+        init_r = run_rt("init", "--task", "current task", cwd=str(tmp_path))
+        assert init_r.returncode == 0
+
+        prior_run_id = "20260401T000001Z"
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / f"{prior_run_id}.json", "w") as f:
+            json.dump(
+                discoverable_state(
+                    prior_run_id,
+                    task="prior task",
+                    status="completed",
+                    stages={"test": {"status": "completed", "roles": ["qa"], "gate": "auto"}},
+                ),
+                f,
+            )
+        write_history_entry(
+            tmp_path,
+            prior_run_id,
+            {
+                "rework_edges": [
+                    {"from_stage": "test", "to_stage": "implement"},
+                ]
+            },
+        )
+
+        r = run_rt("standup", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert "memory" in result
+        assert len(result["memory"]["items"]) == 1
+        assert result["memory"]["items"][0]["type"] == "rework_edge"
+        assert result["memory"]["items"][0]["source_run_id"] == prior_run_id
+        assert result["memory"]["items"][0]["stage"] == "test"
 
     def test_standup_ignores_legacy_scratch_state(self, tmp_path):
         """Standup should ignore incomplete legacy scratch state files."""
