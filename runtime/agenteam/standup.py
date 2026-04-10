@@ -5,7 +5,7 @@ import time
 
 from .artifacts import resolve_artifact_paths_for_config
 from .roles import resolve_roles
-from .state import find_latest_state
+from .state import find_latest_compatible_state
 
 
 def compute_health(state: dict | None) -> tuple[str, list[str]]:
@@ -20,33 +20,41 @@ def compute_health(state: dict | None) -> tuple[str, list[str]]:
     warnings = []
     stages = state.get("stages", {})
 
-    # off-track: any stage blocked or failed
-    off_track_stages = [
-        name for name, info in stages.items() if info.get("status") in ("blocked", "failed")
-    ]
+    # off-track: any stage rejected, failed, blocked, or in rework
+    off_track_stages = []
+    for name, info in stages.items():
+        status = info.get("status")
+        gate_result = info.get("gate_result")
+        if status in ("blocked", "failed", "rejected", "rework") or gate_result == "rejected":
+            off_track_stages.append(name)
+            if gate_result == "rejected":
+                warnings.append(f"Stage '{name}' has a rejected gate decision")
+            else:
+                warnings.append(f"Stage '{name}' is {status}")
     if off_track_stages:
-        for s in off_track_stages:
-            warnings.append(f"Stage '{s}' is {stages[s]['status']}")
         return "off-track", warnings
 
-    # at-risk: any stage in-progress with gate rejection or long-running
+    # at-risk: any active stage that is still running for a long time
     at_risk_stages = []
     for name, info in stages.items():
-        if info.get("status") == "in-progress":
+        status = info.get("status")
+        if status in ("in-progress", "dispatched", "verifying", "gated", "passed"):
             if info.get("gate") == "rejected":
                 at_risk_stages.append(name)
                 warnings.append(f"Stage '{name}' has an unresolved gate rejection")
-            elif info.get("started_at"):
-                # If started_at is present, check duration (> 30 min = at-risk)
-                try:
-                    elapsed = time.time() - info["started_at"]
+                continue
+            started_at = info.get("started_at")
+            # If started_at is present, check duration (> 30 min = at-risk)
+            try:
+                if started_at:
+                    elapsed = time.time() - started_at
                     if elapsed > 1800:
                         at_risk_stages.append(name)
                         warnings.append(
-                            f"Stage '{name}' has been in-progress for {int(elapsed // 60)} minutes"
+                            f"Stage '{name}' has been active for {int(elapsed // 60)} minutes"
                         )
-                except (TypeError, ValueError):
-                    pass
+            except (TypeError, ValueError):
+                pass
 
     if at_risk_stages:
         return "at-risk", warnings
@@ -58,12 +66,11 @@ def cmd_standup(args, config: dict) -> None:
     """Assemble standup summary: roles, run state, artifacts, health."""
     roles = resolve_roles(config)
     role_names = sorted(roles.keys())
-
-    # Load run state
-    state = find_latest_state()
+    state, warnings, _ = find_latest_compatible_state(config)
 
     # Health
-    health, warnings = compute_health(state)
+    health, health_warnings = compute_health(state)
+    warnings.extend(health_warnings)
 
     # Run summary
     run_summary = None

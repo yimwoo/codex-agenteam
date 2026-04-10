@@ -63,3 +63,20 @@ def test_init_skill_prefers_validate_over_dummy_init():
     assert "python3 <plugin-dir>/runtime/agenteam_rt.py validate" in text
     assert "python3 <plugin-dir>/runtime/agenteam_rt.py --help" in text
     assert "Do not create a dummy run just to validate config." in text
+
+
+def test_status_and_standup_docs_use_current_role_names():
+    status_text = read_skill("skills/status/SKILL.md")
+    standup_text = read_skill("skills/standup/SKILL.md")
+    assert "[dev]" in status_text
+    assert "[qa]" in status_text
+    assert "[reviewer]" in status_text
+    assert "implementer" not in status_text
+    assert "test_writer" not in status_text
+    assert "test-writer" not in status_text
+    assert "| dev |" in standup_text
+    assert "| qa |" in standup_text
+    assert "| reviewer |" in standup_text
+    assert "implementer" not in standup_text
+    assert "test_writer" not in standup_text
+    assert "test-writer" not in standup_text

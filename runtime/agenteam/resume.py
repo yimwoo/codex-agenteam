@@ -6,9 +6,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import find_config
+import yaml
+
+from .config import find_config, load_config
 from .events import list_events
-from .state import resolve_stages_for_run
+from .roles import resolve_roles
+from .state import is_discoverable_state, resolve_stages_for_run
 
 # Stale threshold in seconds (10 minutes).
 STALE_THRESHOLD = 600
@@ -90,6 +93,18 @@ def _find_interrupted_stage(state: dict, run_id: str) -> dict | None:
     return None
 
 
+def _state_has_known_roles(state: dict, config: dict) -> bool:
+    """Return True when all roles referenced by state exist in the current config."""
+    known_roles = set(resolve_roles(config).keys())
+    for stage_state in state.get("stages", {}).values():
+        if not isinstance(stage_state, dict):
+            continue
+        for role_name in stage_state.get("roles", []):
+            if isinstance(role_name, str) and role_name not in known_roles:
+                return False
+    return True
+
+
 def cmd_resume_detect(args) -> None:
     """Scan for stale, resumable runs. No config needed."""
     state_dir = Path.cwd() / ".agenteam" / "state"
@@ -135,6 +150,20 @@ def cmd_resume_plan(args, config: dict) -> None:
     with open(state_path) as f:
         state = json.load(f)
 
+    if not is_discoverable_state(state) or not _state_has_known_roles(state, config):
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        f"Run {run_id} is not resumable by the current runtime. "
+                        "It looks like stale or legacy local state."
+                    )
+                }
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Stale check
     last_update = state.get("last_update", "")
     stale = _is_stale(last_update)
@@ -144,8 +173,10 @@ def cmd_resume_plan(args, config: dict) -> None:
     current_hash = ""
     try:
         config_path = find_config(args.config if hasattr(args, "config") and args.config else None)
-        current_hash = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
-    except (FileNotFoundError, OSError):
+        effective_config = load_config(config_path)
+        canonical = yaml.dump(effective_config, default_flow_style=False, sort_keys=True)
+        current_hash = hashlib.sha256(canonical.encode()).hexdigest()
+    except (FileNotFoundError, OSError, TypeError, yaml.YAMLError, ValueError):
         pass
     config_hash_match = stored_hash == current_hash if stored_hash else True
 

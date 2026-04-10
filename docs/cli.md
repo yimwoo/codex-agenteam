@@ -52,7 +52,10 @@ agenteam-rt init --task "add auth" --profile quick
 # Dispatch a stage
 agenteam-rt dispatch implement --task "add auth" --run-id <id>
 
-# Check run status
+# Check run status for latest compatible local run
+agenteam-rt status
+
+# Check run status for a specific run
 agenteam-rt status <run-id>
 
 # Get verification plan for a stage

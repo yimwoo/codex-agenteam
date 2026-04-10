@@ -12,6 +12,7 @@ import yaml
 
 from .config import resolve_team_config
 from .events import append_event
+from .roles import resolve_roles
 
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -33,6 +34,115 @@ def validate_run_id(run_id: str) -> None:
 def generate_run_id() -> str:
     """Generate a timestamp-based run ID."""
     return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+
+
+def is_discoverable_state(state: dict) -> bool:
+    """Return True when a state file is safe to treat as the latest run.
+
+    Implicit discovery powers commands like ``status`` (without a run-id),
+    ``standup``, and ``health``. Those commands should prefer runtime-managed
+    run state and ignore older scratch/demo files that predate the current
+    state schema.
+    """
+    run_id = state.get("run_id")
+    status = state.get("status")
+    last_update = state.get("last_update")
+    stages = state.get("stages")
+
+    return (
+        isinstance(run_id, str)
+        and bool(run_id)
+        and isinstance(status, str)
+        and bool(status)
+        and isinstance(last_update, str)
+        and bool(last_update)
+        and isinstance(stages, dict)
+    )
+
+
+def _state_uses_only_known_roles(state: dict, known_roles: set[str] | None) -> bool:
+    """Return True when every stage role in state is in known_roles."""
+    if known_roles is None:
+        return True
+
+    stages = state.get("stages", {})
+    if not isinstance(stages, dict):
+        return False
+
+    for stage_state in stages.values():
+        if not isinstance(stage_state, dict):
+            continue
+        stage_roles = stage_state.get("roles", [])
+        if not isinstance(stage_roles, list):
+            continue
+        for role_name in stage_roles:
+            if isinstance(role_name, str) and role_name not in known_roles:
+                return False
+    return True
+
+
+def _load_state_file(path: Path) -> dict | None:
+    """Load a state file, returning None on read/parse failure."""
+    try:
+        with open(path) as f:
+            result: dict = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return result
+
+
+def _unknown_state_roles(state: dict, known_roles: set[str]) -> list[str]:
+    """Return sorted unknown role names referenced by a state."""
+    unknown_roles: set[str] = set()
+    stages = state.get("stages", {})
+    if not isinstance(stages, dict):
+        return []
+
+    for stage_state in stages.values():
+        if not isinstance(stage_state, dict):
+            continue
+        stage_roles = stage_state.get("roles", [])
+        if not isinstance(stage_roles, list):
+            continue
+        for role_name in stage_roles:
+            if isinstance(role_name, str) and role_name not in known_roles:
+                unknown_roles.add(role_name)
+
+    return sorted(unknown_roles)
+
+
+def find_latest_compatible_state(config: dict) -> tuple[dict | None, list[str], bool]:
+    """Find the newest discoverable state compatible with the current role set.
+
+    Returns ``(state, warnings, saw_discoverable)`` so callers can distinguish
+    between "no runs at all" and "only legacy/incompatible runs were found".
+    """
+    state_dir = Path.cwd() / ".agenteam" / "state"
+    if not state_dir.exists():
+        return None, [], False
+
+    known_roles = set(resolve_roles(config).keys())
+    warnings: list[str] = []
+    saw_discoverable = False
+
+    for path in sorted(state_dir.glob("*.json"), reverse=True):
+        state = _load_state_file(path)
+        if state is None or not is_discoverable_state(state):
+            continue
+
+        saw_discoverable = True
+        unknown_roles = _unknown_state_roles(state, known_roles)
+        if unknown_roles:
+            run_id = state.get("run_id", path.stem)
+            warnings.append(
+                "Ignored stale local run state "
+                f"{run_id}: references unknown roles {', '.join(unknown_roles)}"
+            )
+            continue
+
+        return state, warnings, True
+
+    return None, warnings, saw_discoverable
 
 
 def get_pipeline_stages(config: dict) -> list[dict]:
@@ -201,25 +311,27 @@ def cmd_init(args, config: dict) -> None:
     print(json.dumps(state))
 
 
-def find_latest_state() -> dict | None:
+def find_latest_state(known_roles: set[str] | None = None) -> dict | None:
     """Find the most recent state file."""
-    latest_state_path = find_latest_state_path()
+    latest_state_path = find_latest_state_path(known_roles=known_roles)
     if latest_state_path is None:
         return None
-    with open(latest_state_path) as f:
-        result: dict = json.load(f)
-    return result
+    return _load_state_file(latest_state_path)
 
 
-def find_latest_state_path() -> Path | None:
-    """Find the most recent state file path."""
+def find_latest_state_path(known_roles: set[str] | None = None) -> Path | None:
+    """Find the most recent discoverable state file path."""
     state_dir = Path.cwd() / ".agenteam" / "state"
     if not state_dir.exists():
         return None
     files = sorted(state_dir.glob("*.json"), reverse=True)
-    if not files:
-        return None
-    return files[0]
+    for path in files:
+        state = _load_state_file(path)
+        if state is None:
+            continue
+        if is_discoverable_state(state) and _state_uses_only_known_roles(state, known_roles):
+            return path
+    return None
 
 
 def cmd_stage_baseline(args, config: dict) -> None:
@@ -337,8 +449,19 @@ def cmd_status(args, config: dict) -> None:
         with open(state_path) as f:
             state = json.load(f)
     else:
-        state = find_latest_state()
+        state, warnings, saw_discoverable = find_latest_compatible_state(config)
         if not state:
+            if saw_discoverable:
+                print(
+                    json.dumps(
+                        {
+                            "error": "No compatible runs found for current role config.",
+                            "warnings": warnings,
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             print(json.dumps({"error": "No runs found"}), file=sys.stderr)
             sys.exit(1)
 

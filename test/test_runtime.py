@@ -44,6 +44,25 @@ def make_home_env(tmp_path: Path) -> dict[str, str]:
     return {"HOME": str(home)}
 
 
+def discoverable_state(run_id: str, **overrides) -> dict:
+    """Build a minimal runtime-managed state payload for discovery tests."""
+    state = {
+        "run_id": run_id,
+        "task": "test task",
+        "pipeline_mode": "standalone",
+        "current_stage": "research",
+        "stage_order": ["research"],
+        "started_at": "2026-03-30T00:00:00Z",
+        "last_update": "2026-03-30T00:00:00Z",
+        "status": "running",
+        "branch": None,
+        "stages": {"research": {"status": "pending", "roles": ["researcher"], "gate": "auto"}},
+        "write_locks": {"active": None, "queue": []},
+    }
+    state.update(overrides)
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Config loading & validation
 # ---------------------------------------------------------------------------
@@ -320,6 +339,76 @@ class TestInitAndState:
         state = json.loads(r.stdout)
         assert state["task"] == "task 1"
 
+    def test_status_skips_incompatible_latest_state(self, tmp_path):
+        """status without run-id skips latest discoverable run with unknown roles."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        compatible = {
+            "run_id": "20260401T000001Z",
+            "task": "compatible run",
+            "status": "running",
+            "last_update": "2026-04-01T00:00:01Z",
+            "stages": {"implement": {"status": "pending", "roles": ["dev"], "gate": "auto"}},
+        }
+        incompatible = {
+            "run_id": "20260401T000002Z",
+            "task": "legacy run",
+            "status": "running",
+            "last_update": "2026-04-01T00:00:02Z",
+            "stages": {
+                "implement": {"status": "pending", "roles": ["implementer"], "gate": "auto"}
+            },
+        }
+
+        with open(state_dir / f"{compatible['run_id']}.json", "w") as f:
+            json.dump(compatible, f)
+        with open(state_dir / f"{incompatible['run_id']}.json", "w") as f:
+            json.dump(incompatible, f)
+
+        r = run_rt("status", cwd=str(tmp_path))
+        assert r.returncode == 0
+        state = json.loads(r.stdout)
+        assert state["run_id"] == compatible["run_id"]
+        assert state["task"] == "compatible run"
+
+    def test_status_incompatible_only_returns_actionable_error(self, tmp_path):
+        """status without run-id returns an actionable error when only legacy runs exist."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        incompatible = {
+            "run_id": "20260401T000002Z",
+            "task": "legacy run",
+            "status": "running",
+            "last_update": "2026-04-01T00:00:02Z",
+            "stages": {
+                "implement": {"status": "pending", "roles": ["implementer"], "gate": "auto"}
+            },
+        }
+        with open(state_dir / f"{incompatible['run_id']}.json", "w") as f:
+            json.dump(incompatible, f)
+
+        r = run_rt("status", cwd=str(tmp_path))
+        assert r.returncode != 0
+        error = json.loads(r.stderr)
+        assert "No compatible runs found" in error["error"]
+
+    def test_status_ignores_legacy_scratch_state_without_run_id(self, tmp_path):
+        """Implicit status should ignore incomplete legacy scratch state files."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(state_dir / "20260330T000000Z.json", "w") as f:
+            json.dump({"run_id": "20260330T000000Z", "stages": {}}, f)
+
+        r = run_rt("status", cwd=str(tmp_path))
+        assert r.returncode != 0
+        assert "No runs found" in r.stderr
+
     def test_status_no_runs(self, tmp_path):
         make_config(tmp_path)
         r = run_rt("status", cwd=str(tmp_path))
@@ -562,7 +651,7 @@ class TestHealthCommand:
         latest_run_id = "20260330T010805Z"
         for run_id in [older_run_id, latest_run_id]:
             with open(state_dir / f"{run_id}.json", "w") as f:
-                json.dump({"run_id": run_id}, f)
+                json.dump(discoverable_state(run_id), f)
 
         r = run_rt("health", cwd=str(tmp_path), env=env)
 
@@ -576,6 +665,21 @@ class TestHealthCommand:
             "generated_agents_exist": True,
             "latest_run_id": latest_run_id,
         }
+
+    def test_health_ignores_legacy_scratch_state(self, tmp_path):
+        make_config(tmp_path)
+        env = make_home_env(tmp_path)
+
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True)
+        with open(state_dir / "20260330T010805Z.json", "w") as f:
+            json.dump({"run_id": "20260330T010805Z", "stages": {}}, f)
+
+        r = run_rt("health", cwd=str(tmp_path), env=env)
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["latest_run_id"] is None
 
     def test_health_reports_malformed_config_errors_on_stderr(self, tmp_path):
         env = make_home_env(tmp_path)
@@ -632,6 +736,66 @@ class TestStandup:
         assert result["run"]["current_stage"] == "research"
         assert "design" in result["stages"]
         assert result["stages"]["design"]["status"] == "pending"
+
+    def test_standup_ignores_legacy_scratch_state(self, tmp_path):
+        """Standup should ignore incomplete legacy scratch state files."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / "20260330T045144Z.json", "w") as f:
+            json.dump(
+                {
+                    "run_id": "20260330T045144Z",
+                    "task": "team initialization",
+                    "current_stage": "research",
+                    "stages": {"research": {"status": "pending", "roles": ["researcher"]}},
+                },
+                f,
+            )
+
+        r = run_rt("standup", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["health"] == "no-active-run"
+        assert result["run"] is None
+        assert result["stages"] == {}
+
+    def test_standup_ignores_incompatible_latest_state(self, tmp_path):
+        """standup should ignore latest discoverable run if it references unknown roles."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        compatible = {
+            "run_id": "20260401T000001Z",
+            "task": "compatible run",
+            "current_stage": "implement",
+            "status": "running",
+            "last_update": "2026-04-01T00:00:01Z",
+            "stages": {"implement": {"status": "pending", "roles": ["dev"], "gate": "auto"}},
+        }
+        incompatible = {
+            "run_id": "20260401T000002Z",
+            "task": "legacy run",
+            "current_stage": "implement",
+            "status": "running",
+            "last_update": "2026-04-01T00:00:02Z",
+            "stages": {
+                "implement": {"status": "pending", "roles": ["implementer"], "gate": "auto"}
+            },
+        }
+
+        with open(state_dir / f"{compatible['run_id']}.json", "w") as f:
+            json.dump(compatible, f)
+        with open(state_dir / f"{incompatible['run_id']}.json", "w") as f:
+            json.dump(incompatible, f)
+
+        r = run_rt("standup", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["run"] is not None
+        assert result["run"]["run_id"] == compatible["run_id"]
+        assert any("Ignored stale local run state" in warning for warning in result["warnings"])
 
     def test_standup_returns_all_default_roles(self, tmp_path):
         """Standup should list all 6 built-in roles."""
@@ -809,6 +973,34 @@ class TestStandup:
         assert result["output_path"].startswith("docs/meetings/")
         assert result["output_path"].endswith("-standup.md")
 
+    def test_standup_uses_config_roles_when_demo_state_has_legacy_role_names(self, tmp_path):
+        """Legacy role names in stale/demo state must not leak into standup role output."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / "20260330T045144Z.json", "w") as f:
+            json.dump(
+                {
+                    "run_id": "20260330T045144Z",
+                    "task": "demo run",
+                    "pipeline_mode": "standalone",
+                    "current_stage": "implement",
+                    "stages": {
+                        "implement": {"status": "pending", "roles": ["implementer"]},
+                        "test": {"status": "pending", "roles": ["test_writer"]},
+                    },
+                },
+                f,
+            )
+
+        r = run_rt("standup", "--dispatch", cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert set(result["roles"]) == {"researcher", "pm", "architect", "dev", "qa", "reviewer"}
+        assert "implementer" not in result["roles"]
+        assert "test_writer" not in result["roles"]
+        assert {item["role"] for item in result["dispatch"]} == {"researcher", "architect", "pm"}
+
 
 # ---------------------------------------------------------------------------
 # compute_health (unit-level via subprocess with crafted state files)
@@ -823,8 +1015,10 @@ class TestComputeHealth:
         state_dir = tmp_path / ".agenteam" / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
         run_id = state.get("run_id", "20240101T000000Z")
+        merged = discoverable_state(run_id)
+        merged.update(state)
         with open(state_dir / f"{run_id}.json", "w") as f:
-            json.dump(state, f)
+            json.dump(merged, f)
 
     def test_health_empty_stages_returns_on_track(self, tmp_path):
         """State with empty stages dict should return on-track (nothing to be wrong)."""
@@ -1248,12 +1442,50 @@ class TestStatusById:
         assert state["run_id"] == run_id
         assert state["task"] == "explicit id task"
 
+    def test_status_with_explicit_legacy_run_id_still_returns_state(self, tmp_path):
+        """Explicit run-id lookup remains backward compatible for legacy state files."""
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / "20260330T000000Z.json", "w") as f:
+            json.dump({"run_id": "20260330T000000Z", "stages": {}}, f)
+
+        r = run_rt("status", "20260330T000000Z", cwd=str(tmp_path))
+        assert r.returncode == 0
+        state = json.loads(r.stdout)
+        assert state["run_id"] == "20260330T000000Z"
+
     def test_status_nonexistent_run_id(self, tmp_path):
         """status with a run-id that doesn't exist should exit non-zero."""
         make_config(tmp_path)
         r = run_rt("status", "99991231T999999Z", cwd=str(tmp_path))
         assert r.returncode != 0
         assert "not found" in r.stderr
+
+    def test_status_run_id_is_stable_with_newer_demo_state_present(self, tmp_path):
+        """Explicit run-id lookup should ignore unrelated newer state files."""
+        make_config(tmp_path)
+        init_r = run_rt("init", "--task", "real task", cwd=str(tmp_path))
+        assert init_r.returncode == 0
+        real_run_id = json.loads(init_r.stdout)["run_id"]
+
+        state_dir = tmp_path / ".agenteam" / "state"
+        with open(state_dir / "99991231T999999Z.json", "w") as f:
+            json.dump(
+                {
+                    "run_id": "99991231T999999Z",
+                    "task": "demo task",
+                    "status": "running",
+                    "stages": {},
+                },
+                f,
+            )
+
+        r = run_rt("status", real_run_id, cwd=str(tmp_path))
+        assert r.returncode == 0
+        state = json.loads(r.stdout)
+        assert state["run_id"] == real_run_id
+        assert state["task"] == "real task"
 
 
 # ---------------------------------------------------------------------------
@@ -4140,10 +4372,15 @@ class TestResume:
     def test_resume_plan_config_hash_mismatch(self, tmp_path):
         run_id = self._init_run(tmp_path)
         self._make_stale(tmp_path, run_id, 15)
-        # Modify config after init
+        # Modify effective config after init
         config_path = tmp_path / "agenteam.yaml"
-        with open(config_path, "a") as f:
-            f.write("\n# modified\n")
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        config.setdefault("roles", {})
+        config["roles"].setdefault("architect", {})
+        config["roles"]["architect"]["model"] = "o3-pro"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
         r = run_rt("resume-plan", "--run-id", run_id, cwd=str(tmp_path))
         assert r.returncode == 0
         result = json.loads(r.stdout)
@@ -4183,6 +4420,42 @@ class TestResume:
         assert r.returncode == 0
         result = json.loads(r.stdout)
         assert result["pipeline_mode"] == "standalone"
+
+    def test_resume_plan_rejects_legacy_scratch_state(self, tmp_path):
+        make_config(tmp_path)
+        state_dir = tmp_path / ".agenteam" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with open(state_dir / "20260330T045144Z.json", "w") as f:
+            json.dump({"run_id": "20260330T045144Z", "stages": {}}, f)
+
+        r = run_rt("resume-plan", "--run-id", "20260330T045144Z", cwd=str(tmp_path))
+        assert r.returncode != 0
+        error = json.loads(r.stderr)
+        assert "not resumable" in error["error"]
+
+    def test_resume_plan_layered_config_hash_uses_effective_config(self, tmp_path):
+        with open(TEMPLATE) as f:
+            team_config = yaml.safe_load(f)
+
+        team_dir = tmp_path / ".agenteam.team"
+        team_dir.mkdir(parents=True, exist_ok=True)
+        with open(team_dir / "config.yaml", "w") as f:
+            yaml.dump(team_config, f)
+
+        personal_dir = tmp_path / ".agenteam"
+        personal_dir.mkdir(parents=True, exist_ok=True)
+        with open(personal_dir / "config.yaml", "w") as f:
+            yaml.dump({"roles": {"architect": {"model": "o3-pro"}}}, f)
+
+        r = run_rt("init", "--task", "layered resume", cwd=str(tmp_path))
+        assert r.returncode == 0
+        run_id = json.loads(r.stdout)["run_id"]
+        self._make_stale(tmp_path, run_id, 15)
+
+        r = run_rt("resume-plan", "--run-id", run_id, cwd=str(tmp_path))
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["config_hash_match"] is True
 
 
 # ---------------------------------------------------------------------------

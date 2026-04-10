@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .config import find_config, load_config, resolve_team_config
-from .state import find_latest_state_path
+from .state import find_latest_compatible_state, find_latest_state
 
 
 def hotl_available() -> dict:
@@ -60,11 +60,11 @@ def cmd_health(args) -> None:
     hotl_info = hotl_available()
 
     latest_run_id = None
-    latest_state_path = find_latest_state_path()
-    if latest_state_path is not None:
-        with open(latest_state_path) as f:
-            state = json.load(f)
-        latest_run_id = state.get("run_id")
+    latest_state = find_latest_state()
+    if config_exists:
+        latest_state, _, _ = find_latest_compatible_state(config)
+    if latest_state is not None:
+        latest_run_id = latest_state.get("run_id")
 
     result = {
         "config_exists": config_exists,

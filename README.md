@@ -60,6 +60,8 @@ Researcher  ->  PM  ->  Architect  ->  Dev  ->  Qa  ->  Reviewer
 
 Need a specialist? `@ATeam add a security auditor that focuses on OWASP top 10`
 
+Runtime run state lives under `.agenteam/state/` and is local-only. Default status/standup behavior uses the latest compatible run state for the current role config and ignores stale legacy snapshots.
+
 ---
 
 ## Why AgenTeam?
