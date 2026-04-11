@@ -6246,9 +6246,12 @@ class TestPromptBuild:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -6266,9 +6269,12 @@ class TestPromptBuild:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -6281,9 +6287,12 @@ class TestPromptBuild:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -6295,9 +6304,12 @@ class TestPromptBuild:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
@@ -6311,9 +6323,12 @@ class TestPromptBuild:
         env = make_home_env(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -6327,9 +6342,12 @@ class TestPromptBuild:
         env = make_home_env(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
             env=env,
         )
@@ -6341,9 +6359,12 @@ class TestPromptBuild:
         run_id = self._init_run(tmp_path)
         r = run_rt(
             "prompt-build",
-            "--run-id", run_id,
-            "--stage", "implement",
-            "--role", "dev",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--role",
+            "dev",
             cwd=str(tmp_path),
         )
         assert r.returncode == 0
