@@ -2,9 +2,7 @@
 
 import json
 import os
-import sys
-import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from .artifacts import resolve_artifact_paths_for_config
@@ -65,7 +63,8 @@ def _resolve_task(run_id: str, config: dict) -> dict:
 def _find_prior_artifacts(run_id: str, config: dict) -> dict:
     """Find prior-stage artifacts using best-effort mtime heuristic."""
     artifact_paths = resolve_artifact_paths_for_config(config)
-    mode = "hotl" if "architect" in artifact_paths and artifact_paths.get("architect") == "docs/plans/" else "standalone"
+    is_hotl = "architect" in artifact_paths and artifact_paths.get("architect") == "docs/plans/"
+    mode = "hotl" if is_hotl else "standalone"
 
     # Build search_paths from the artifact map
     search_paths = {}
@@ -84,9 +83,7 @@ def _find_prior_artifacts(run_id: str, config: dict) -> dict:
         started_at = state.get("started_at", "")
         if started_at:
             try:
-                run_start = datetime.fromisoformat(
-                    started_at.replace("Z", "+00:00")
-                ).timestamp()
+                run_start = datetime.fromisoformat(started_at.replace("Z", "+00:00")).timestamp()
             except (ValueError, TypeError):
                 run_start = 0
 
@@ -107,11 +104,13 @@ def _find_prior_artifacts(run_id: str, config: dict) -> dict:
                         if f.is_file() and f.suffix == ".md":
                             try:
                                 if os.path.getmtime(f) >= run_start:
-                                    selected.append({
-                                        "path": str(f.relative_to(Path.cwd())),
-                                        "role": role_key,
-                                        "kind": kind_map.get(role_key, "artifact"),
-                                    })
+                                    selected.append(
+                                        {
+                                            "path": str(f.relative_to(Path.cwd())),
+                                            "role": role_key,
+                                            "kind": kind_map.get(role_key, "artifact"),
+                                        }
+                                    )
                             except OSError:
                                 pass
 
