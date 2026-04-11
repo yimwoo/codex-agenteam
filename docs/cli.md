@@ -72,6 +72,11 @@ agenteam-rt final-verify-plan --run-id <id>
 
 # Build the fully composed prompt for a role dispatch (for codex exec / harnesses)
 agenteam-rt prompt-build --run-id <id> --stage implement --role dev
+
+# Run the full pipeline non-interactively via codex exec
+agenteam-rt run --task "add user auth" --auto-approve-gates
+agenteam-rt run --task-file seed.md --profile standard --output-dir ./out
+agenteam-rt run --run-id <id>  # resume an existing run
 ```
 
 ### Branch & Isolation

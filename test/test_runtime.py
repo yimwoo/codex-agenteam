@@ -6371,3 +6371,77 @@ class TestPromptBuild:
         result = json.loads(r.stdout)
         assert isinstance(result["prompt"], str)
         assert len(result["prompt"]) > 100  # Should have substantial content
+
+
+# ---------------------------------------------------------------------------
+# Non-interactive runner (v3.3)
+# ---------------------------------------------------------------------------
+
+
+class TestRunner:
+    def test_run_missing_codex_binary_fails(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt(
+            "run",
+            "--task",
+            "test",
+            "--codex-bin",
+            "/nonexistent/codex-binary-xyz",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode != 0
+        assert "not found" in r.stderr
+
+    def test_run_resume_missing_state_fails(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt(
+            "run",
+            "--run-id",
+            "nonexistent-run-id",
+            "--codex-bin",
+            "codex",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode != 0
+        assert "not found" in r.stderr
+
+    def test_run_cli_accepts_all_flags(self, tmp_path):
+        """Verify the CLI parser accepts all documented flags."""
+        make_config(tmp_path)
+        # Parse only — will fail at codex binary check, but shouldn't fail at parse
+        r = run_rt(
+            "run",
+            "--task",
+            "test task",
+            "--profile",
+            "quick",
+            "--codex-bin",
+            "/nonexistent/bin",
+            "--codex-args",
+            "skip-git-repo-check",
+            "--auto-approve-gates",
+            "--output-dir",
+            str(tmp_path / "out"),
+            cwd=str(tmp_path),
+        )
+        # Should fail at codex binary check, not at arg parsing
+        assert r.returncode != 0
+        assert "not found" in r.stderr  # codex binary error, not parse error
+
+    def test_run_no_task_fails(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt(
+            "run",
+            "--codex-bin",
+            "codex",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode != 0
+
+    def test_run_creates_output_directory(self, tmp_path):
+        """Test that _setup_output_dir creates the directory."""
+        from runtime.agenteam.runner import _setup_output_dir
+
+        out = _setup_output_dir(str(tmp_path / "custom-out"), "test-run")
+        assert out.exists()
+        assert out == tmp_path / "custom-out"

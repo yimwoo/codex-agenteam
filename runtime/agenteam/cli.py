@@ -25,6 +25,7 @@ from .migrate import cmd_migrate
 from .prompt import cmd_prompt_build
 from .report import cmd_history_append, cmd_history_list, cmd_run_report
 from .resume import cmd_resume_detect, cmd_resume_plan
+from .runner import cmd_run
 from .standup import cmd_standup
 from .state import cmd_init, cmd_stage_baseline, cmd_status, set_stage_field, validate_run_id
 from .transitions import cmd_transition
@@ -179,6 +180,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_ssf.add_argument("--stage", required=True)
     p_ssf.add_argument("--field", required=True)
     p_ssf.add_argument("--value", required=True)
+
+    # run (non-interactive pipeline runner)
+    p_run = sub.add_parser("run", help="Run the full pipeline non-interactively via codex exec")
+    p_run_task = p_run.add_mutually_exclusive_group()
+    p_run_task.add_argument("--task", default=None)
+    p_run_task.add_argument("--task-file", dest="task_file", default=None)
+    p_run.add_argument("--profile", default=None)
+    p_run.add_argument("--run-id", dest="run_id", default=None)
+    p_run.add_argument("--codex-bin", dest="codex_bin", default="codex")
+    p_run.add_argument("--codex-args", dest="codex_args", default="")
+    p_run.add_argument(
+        "--auto-approve-gates",
+        dest="auto_approve_gates",
+        action="store_true",
+        default=False,
+    )
+    p_run.add_argument("--output-dir", dest="output_dir", default=None)
 
     # prompt-build
     p_prompt = sub.add_parser("prompt-build", help="Build the effective prompt for a role dispatch")
@@ -370,6 +388,8 @@ def main() -> None:
     elif args.command == "set-stage-field":
         set_stage_field(args.run_id, args.stage, args.field, args.value)
         print(json.dumps({"updated": True, "stage": args.stage, "field": args.field}))
+    elif args.command == "run":
+        cmd_run(args, config)
     elif args.command == "prompt-build":
         cmd_prompt_build(args, config)
     elif args.command == "run-report":
