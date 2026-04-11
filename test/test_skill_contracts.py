@@ -96,3 +96,11 @@ def test_ci_repair_skill_has_required_elements():
     assert "git-isolate" in text or "preflight" in text
     # HOTL adapter NOT used for standalone repair
     assert "hotl-skills" not in text or "NOT used" in text
+
+
+def test_prompt_build_cli_exists():
+    """prompt-build command is registered and documented."""
+    cli_text = (ROOT / "docs" / "cli.md").read_text()
+    assert "prompt-build" in cli_text
+    claude_text = (ROOT / "CLAUDE.md").read_text()
+    assert "prompt-build" in claude_text
