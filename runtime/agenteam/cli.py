@@ -22,6 +22,7 @@ from .generate import cmd_generate
 from .hotl import cmd_health, cmd_hotl_check
 from .hotl_adapter import cmd_hotl_skills
 from .migrate import cmd_migrate
+from .prompt import cmd_prompt_build
 from .report import cmd_history_append, cmd_history_list, cmd_run_report
 from .resume import cmd_resume_detect, cmd_resume_plan
 from .standup import cmd_standup
@@ -178,6 +179,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_ssf.add_argument("--stage", required=True)
     p_ssf.add_argument("--field", required=True)
     p_ssf.add_argument("--value", required=True)
+
+    # prompt-build
+    p_prompt = sub.add_parser("prompt-build", help="Build the effective prompt for a role dispatch")
+    p_prompt.add_argument("--run-id", dest="run_id", required=True)
+    p_prompt.add_argument("--stage", required=True)
+    p_prompt.add_argument("--role", required=True)
 
     # run-report
     p_run_report = sub.add_parser("run-report", help="Assemble run report from state")
@@ -363,6 +370,8 @@ def main() -> None:
     elif args.command == "set-stage-field":
         set_stage_field(args.run_id, args.stage, args.field, args.value)
         print(json.dumps({"updated": True, "stage": args.stage, "field": args.field}))
+    elif args.command == "prompt-build":
+        cmd_prompt_build(args, config)
     elif args.command == "run-report":
         cmd_run_report(args, config)
     elif args.command == "gate-eval":

@@ -8,21 +8,12 @@ import toml
 from .roles import resolve_roles
 
 
-def generate_agent_toml(role: dict) -> str:
-    """Generate Codex agent TOML from a resolved role."""
-    agent = {}
-    agent["name"] = role["name"]
-    agent["description"] = role.get("description", "").strip()
+def build_developer_instructions(role: dict) -> str:
+    """Build the developer_instructions string from a resolved role.
 
-    # Optional config fields
-    if "model" in role:
-        agent["model"] = role["model"]
-    if "reasoning_effort" in role:
-        agent["model_reasoning_effort"] = role["reasoning_effort"]
-    if "sandbox_mode" in role:
-        agent["sandbox_mode"] = role["sandbox_mode"]
-
-    # Build developer_instructions from system_instructions + metadata
+    This is the canonical prompt for a role, used by both TOML generation
+    and prompt-build.
+    """
     instructions_parts = []
     if "system_instructions" in role:
         instructions_parts.append(role["system_instructions"].rstrip())
@@ -39,7 +30,37 @@ def generate_agent_toml(role: dict) -> str:
     if metadata_lines:
         instructions_parts.append("\n## Role Metadata\n" + "\n".join(metadata_lines))
 
-    agent["developer_instructions"] = "\n".join(instructions_parts)
+    # Append handoff contract if present
+    handoff = role.get("handoff_contract") or {}
+    if handoff:
+        handoff_lines = []
+        if "produces" in handoff:
+            handoff_lines.append(f"produces: {handoff['produces']}")
+        if "expects" in handoff:
+            handoff_lines.append(f"expects: {handoff['expects']}")
+        if "passes_to" in handoff:
+            handoff_lines.append(f"passes_to: {handoff['passes_to']}")
+        if handoff_lines:
+            instructions_parts.append("\n## Handoff Contract\n" + "\n".join(handoff_lines))
+
+    return "\n".join(instructions_parts)
+
+
+def generate_agent_toml(role: dict) -> str:
+    """Generate Codex agent TOML from a resolved role."""
+    agent = {}
+    agent["name"] = role["name"]
+    agent["description"] = role.get("description", "").strip()
+
+    # Optional config fields
+    if "model" in role:
+        agent["model"] = role["model"]
+    if "reasoning_effort" in role:
+        agent["model_reasoning_effort"] = role["reasoning_effort"]
+    if "sandbox_mode" in role:
+        agent["sandbox_mode"] = role["sandbox_mode"]
+
+    agent["developer_instructions"] = build_developer_instructions(role)
 
     result: str = toml.dumps(agent)
     return result
