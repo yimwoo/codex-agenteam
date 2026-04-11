@@ -14,6 +14,7 @@ These are the primary commands for Codex App and Codex CLI users:
 | `$ateam:generate` | Regenerate agents after config changes |
 | `$ateam:standup` | Quick project status report |
 | `$ateam:assign <role> "task"` | Assign a task to a specific role |
+| `$ateam:ci-repair <pr-or-branch>` | Fix CI failures — fetch logs, dispatch dev, verify, push |
 | `$ateam:share-config` | Promote local config to shared team config |
 
 ## Runtime CLI

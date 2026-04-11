@@ -80,3 +80,19 @@ def test_status_and_standup_docs_use_current_role_names():
     assert "implementer" not in standup_text
     assert "test_writer" not in standup_text
     assert "test-writer" not in standup_text
+
+
+def test_ci_repair_skill_has_required_elements():
+    text = read_skill("skills/ci-repair/SKILL.md")
+    # Commit-keyed run selection (not branch-keyed)
+    assert "headRefOid" in text
+    # Safe git model with baseline
+    assert "REPAIR_BASELINE" in text
+    # Verify before push
+    assert "final-verify-plan" in text
+    # Failure log fetching
+    assert "log-failed" in text
+    # Git safety preflight
+    assert "git-isolate" in text or "preflight" in text
+    # HOTL adapter NOT used for standalone repair
+    assert "hotl-skills" not in text or "NOT used" in text

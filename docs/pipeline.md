@@ -110,3 +110,13 @@ final_verify_max_retries: 1
 ```
 
 If `block`, the pipeline fails on verification failure. If `warn`, it reports but continues.
+
+## Post-Pipeline: CI Repair
+
+After the pipeline creates a PR, CI may still fail (environment differences, flaky tests, missing dependencies). Use `$ateam:ci-repair` to fix CI failures without re-running the full pipeline:
+
+```
+$ateam:ci-repair #42
+```
+
+The skill fetches the GitHub Actions failure logs, dispatches dev with bounded context, verifies the fix locally, and pushes only if verification passes. See `docs/cli.md` for usage details.
