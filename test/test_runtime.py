@@ -6228,3 +6228,125 @@ class TestEventTail:
         lines = [line for line in r.stdout.strip().split("\n") if line]
         assert len(lines) == 3
         assert "run_finished" in lines[-1]
+
+
+# ---------------------------------------------------------------------------
+# Prompt build (v3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestPromptBuild:
+    def _init_run(self, tmp_path):
+        make_config(tmp_path)
+        r = run_rt("init", "--task", "prompt build test", cwd=str(tmp_path))
+        assert r.returncode == 0
+        return json.loads(r.stdout)["run_id"]
+
+    def test_prompt_build_returns_schema(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["schema_version"] == "1"
+        assert result["run_id"] == run_id
+        assert result["stage"] == "implement"
+        assert result["role"] == "dev"
+        assert "agent" in result
+        assert "task" in result
+        assert "prompt_sections" in result
+        assert "prompt" in result
+
+    def test_prompt_build_developer_instructions_match_role(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        instructions = result["agent"]["developer_instructions"]
+        assert "dev" in instructions.lower()
+        assert len(instructions) > 50  # Should have real content
+
+    def test_prompt_build_task_separates_raw_and_effective(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["task"]["raw"] == "prompt build test"
+        assert "prompt build test" in result["task"]["effective"]
+
+    def test_prompt_build_prompt_sections_ordered(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        section_ids = [s["id"] for s in result["prompt_sections"]]
+        assert section_ids[0] == "developer_instructions"
+        assert section_ids[1] == "task"
+
+    def test_prompt_build_artifacts_has_search_paths(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        env = make_home_env(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+            env=env,
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert "search_paths" in result["artifacts"]
+        assert len(result["artifacts"]["search_paths"]) > 0
+
+    def test_prompt_build_hotl_graceful_without_plugin(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        env = make_home_env(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+            env=env,
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["hotl"]["available"] is False
+
+    def test_prompt_build_prompt_is_nonempty_string(self, tmp_path):
+        run_id = self._init_run(tmp_path)
+        r = run_rt(
+            "prompt-build",
+            "--run-id", run_id,
+            "--stage", "implement",
+            "--role", "dev",
+            cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert isinstance(result["prompt"], str)
+        assert len(result["prompt"]) > 100  # Should have substantial content

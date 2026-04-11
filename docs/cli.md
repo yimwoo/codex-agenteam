@@ -68,6 +68,9 @@ agenteam-rt record-verify --run-id <id> --stage implement --result pass
 
 # Get final verification plan
 agenteam-rt final-verify-plan --run-id <id>
+
+# Build the fully composed prompt for a role dispatch (for codex exec / harnesses)
+agenteam-rt prompt-build --run-id <id> --stage implement --role dev
 ```
 
 ### Branch & Isolation
