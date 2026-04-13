@@ -670,9 +670,9 @@ class TestDispatch:
             plan = json.loads(r.stdout)
 
             assert plan["stage"] == stage_name
-            assert plan["dispatch"] or plan["blocked"], (
-                f"expected dispatch or blocked entries for stage {stage_name}"
-            )
+            assert (
+                plan["dispatch"] or plan["blocked"]
+            ), f"expected dispatch or blocked entries for stage {stage_name}"
 
             stage_dispatch_counts[stage_name] = len(plan["dispatch"])
             for entry in plan["dispatch"]:
@@ -6397,6 +6397,15 @@ class TestPromptBuild:
 
 
 class TestRunner:
+    def test_parse_codex_args_handles_shell_quoting_and_bare_flags(self):
+        from runtime.agenteam.runner import _parse_codex_args
+
+        assert _parse_codex_args('--config model="gpt-5.2" skip-git-repo-check') == [
+            "--config",
+            "model=gpt-5.2",
+            "--skip-git-repo-check",
+        ]
+
     def test_run_missing_codex_binary_fails(self, tmp_path):
         make_config(tmp_path)
         r = run_rt(
@@ -6445,6 +6454,42 @@ class TestRunner:
         # Should fail at codex binary check, not at arg parsing
         assert r.returncode != 0
         assert "not found" in r.stderr  # codex binary error, not parse error
+
+    def test_run_role_uses_stdin_prompt_and_normalized_codex_args(self, tmp_path, monkeypatch):
+        from runtime.agenteam import runner
+
+        captured = {}
+
+        monkeypatch.setattr(runner, "build_prompt", lambda *args, **kwargs: {"prompt": "hello"})
+        monkeypatch.setattr(runner, "_emit_event", lambda *args, **kwargs: None)
+
+        def fake_run(cmd, input, capture_output, text, cwd, timeout):
+            captured["cmd"] = cmd
+            captured["input"] = input
+            return subprocess.CompletedProcess(cmd, 0, '{"type":"turn.completed"}', "")
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+        result = runner._run_role(
+            run_id="run-123",
+            stage="research",
+            role_name="researcher",
+            config={},
+            codex_bin="codex",
+            codex_args=runner._parse_codex_args("skip-git-repo-check"),
+            output_dir=tmp_path,
+            events_file=tmp_path / "events.jsonl",
+        )
+
+        assert captured["cmd"] == [
+            "codex",
+            "exec",
+            "--json",
+            "--full-auto",
+            "--skip-git-repo-check",
+        ]
+        assert captured["input"] == "hello"
+        assert result["exit_code"] == 0
 
     def test_run_no_task_fails(self, tmp_path):
         make_config(tmp_path)

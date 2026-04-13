@@ -1,6 +1,7 @@
 """Non-interactive pipeline runner: drives the full pipeline via codex exec."""
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,25 @@ def _setup_output_dir(output_dir: str, run_id: str) -> Path:
     out = Path(output_dir) if output_dir else Path.cwd() / ".agenteam" / "runs" / run_id
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def _parse_codex_args(raw_args: str) -> list[str]:
+    """Parse codex exec passthrough args and normalize common bare long flags."""
+    if not raw_args:
+        return []
+
+    normalized: list[str] = []
+    bare_long_flags = {
+        "skip-git-repo-check",
+    }
+
+    for token in shlex.split(raw_args):
+        if token in bare_long_flags:
+            normalized.append(f"--{token}")
+        else:
+            normalized.append(token)
+
+    return normalized
 
 
 def _load_state(run_id: str) -> dict:
@@ -140,7 +160,7 @@ def _run_role(
     )
 
     start = time.time()
-    cmd = [codex_bin, "exec", "--json", "--full-auto", "-"] + codex_args
+    cmd = [codex_bin, "exec", "--json", "--full-auto", *codex_args]
 
     try:
         proc = subprocess.run(  # noqa: S603
@@ -217,7 +237,7 @@ def cmd_run(args, config: dict) -> None:
     """Non-interactive pipeline runner."""
     codex_bin = getattr(args, "codex_bin", "codex") or "codex"
     codex_args_str = getattr(args, "codex_args", "") or ""
-    codex_args = codex_args_str.split() if codex_args_str else []
+    codex_args = _parse_codex_args(codex_args_str)
     auto_approve = getattr(args, "auto_approve_gates", False)
     output_dir_arg = getattr(args, "output_dir", None)
 
