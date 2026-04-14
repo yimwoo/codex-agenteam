@@ -720,9 +720,9 @@ class TestDispatch:
             plan = json.loads(r.stdout)
 
             assert plan["stage"] == stage_name
-            assert (
-                plan["dispatch"] or plan["blocked"]
-            ), f"expected dispatch or blocked entries for stage {stage_name}"
+            assert plan["dispatch"] or plan["blocked"], (
+                f"expected dispatch or blocked entries for stage {stage_name}"
+            )
 
             stage_dispatch_counts[stage_name] = len(plan["dispatch"])
             for entry in plan["dispatch"]:
@@ -1268,7 +1268,7 @@ class TestGovernedDeliveryFoundations:
             "artifact": "docs/plans/2026-04-14-v33-governed-delivery-foundations-design.md",
             "summary": "Use JSONL as canonical decision storage.",
             "rationale_ref": (
-                "docs/requirements/2026-04-14-" "governed-delivery-foundations-requirements.md"
+                "docs/requirements/2026-04-14-governed-delivery-foundations-requirements.md"
             ),
         }
         decision_two = {
