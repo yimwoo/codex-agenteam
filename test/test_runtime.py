@@ -25,6 +25,56 @@ def run_rt(*args, cwd=None, env: dict[str, str] | None = None) -> subprocess.Com
     )
 
 
+def _assert_decision_help(cwd: str) -> str:
+    """Return decision help output and assert canonical command exists."""
+    help_result = run_rt("decision", "--help", cwd=cwd)
+    assert help_result.returncode == 0, help_result.stderr
+    return help_result.stdout
+
+
+def _run_decision_append(cwd: str, payload: dict) -> subprocess.CompletedProcess:
+    """Append a decision record using the documented append interface."""
+    append_help = run_rt("decision", "append", "--help", cwd=cwd)
+    assert append_help.returncode == 0, append_help.stderr
+    args = ["decision", "append"]
+    flag_map = {
+        "outcome": "--outcome",
+        "role": "--role",
+        "run_id": "--run-id",
+        "stage": "--stage",
+        "initiative": "--initiative",
+        "phase": "--phase",
+        "checkpoint": "--checkpoint",
+        "artifact_type": "--artifact-type",
+        "artifact_ref": "--artifact-ref",
+        "decision_right": "--decision-right",
+        "tripwire_id": "--tripwire-id",
+        "summary": "--summary",
+        "rationale": "--rationale",
+        "human_disposition": "--human-disposition",
+    }
+    normalized = dict(payload)
+    if "artifact" in payload and "artifact_ref" not in normalized:
+        normalized["artifact_ref"] = payload["artifact"]
+    if "rationale_ref" in payload and "rationale" not in normalized:
+        normalized["rationale"] = payload["rationale_ref"]
+    for key, flag in flag_map.items():
+        if flag in append_help.stdout and key in normalized and normalized[key] is not None:
+            args.extend([flag, str(normalized[key])])
+    return run_rt(*args, cwd=cwd)
+
+
+def _standup_governance_value(standup: dict, key: str):
+    """Read a governance field from either standup.governance or standup.run."""
+    governance = standup.get("governance")
+    if isinstance(governance, dict) and key in governance:
+        return governance.get(key)
+    run = standup.get("run")
+    if isinstance(run, dict) and key in run:
+        return run.get(key)
+    return None
+
+
 def make_config(tmp_path: Path, overrides: dict | None = None) -> Path:
     """Create a agenteam.yaml in tmp_path from template, with optional overrides."""
     with open(TEMPLATE) as f:
@@ -670,9 +720,9 @@ class TestDispatch:
             plan = json.loads(r.stdout)
 
             assert plan["stage"] == stage_name
-            assert plan["dispatch"] or plan["blocked"], (
-                f"expected dispatch or blocked entries for stage {stage_name}"
-            )
+            assert (
+                plan["dispatch"] or plan["blocked"]
+            ), f"expected dispatch or blocked entries for stage {stage_name}"
 
             stage_dispatch_counts[stage_name] = len(plan["dispatch"])
             for entry in plan["dispatch"]:
@@ -1166,6 +1216,375 @@ class TestStandup:
         assert "implementer" not in result["roles"]
         assert "test_writer" not in result["roles"]
         assert {item["role"] for item in result["dispatch"]} == {"researcher", "architect", "pm"}
+
+
+# ---------------------------------------------------------------------------
+# Governed Delivery Foundations (v3.3)
+# ---------------------------------------------------------------------------
+
+
+class TestGovernedDeliveryFoundations:
+    def test_governance_bootstrap_creates_expected_assets(self, tmp_path):
+        make_config(tmp_path)
+
+        result = run_rt("governed-bootstrap", cwd=str(tmp_path))
+        assert result.returncode == 0, result.stderr
+
+        assert (tmp_path / ".agenteam" / "governance" / "operating-model.yaml").exists()
+        assert (tmp_path / ".agenteam" / "governance" / "tripwires.yaml").exists()
+        assert (tmp_path / ".agenteam" / "governance" / "lifecycle.json").exists()
+        assert (tmp_path / ".agenteam" / "governance" / "decisions.jsonl").exists()
+        assert (tmp_path / ".agenteam" / "governance" / "playbooks" / "README.md").exists()
+        assert (tmp_path / "docs" / "decisions" / "log.md").exists()
+        tripwires_text = (tmp_path / ".agenteam" / "governance" / "tripwires.yaml").read_text()
+        assert "public-api-change" in tripwires_text
+        assert "auth-surface-change" in tripwires_text
+
+    def test_governance_bootstrap_is_idempotent(self, tmp_path):
+        make_config(tmp_path)
+
+        first = run_rt("governed-bootstrap", cwd=str(tmp_path))
+        assert first.returncode == 0, first.stderr
+        second = run_rt("governed-bootstrap", cwd=str(tmp_path))
+        assert second.returncode == 0, second.stderr
+        payload = json.loads(second.stdout)
+        assert payload["created"] == []
+
+    def test_decision_append_list_and_render_log(self, tmp_path):
+        make_config(tmp_path)
+        init = run_rt("init", "--task", "decision-flow", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        decision_one = {
+            "outcome": "autonomous",
+            "role": "architect",
+            "run_id": run_id,
+            "stage": "design",
+            "initiative": "governed-delivery-foundations",
+            "phase": "v3.3",
+            "checkpoint": "kickoff",
+            "escalation_status": "none",
+            "artifact": "docs/plans/2026-04-14-v33-governed-delivery-foundations-design.md",
+            "summary": "Use JSONL as canonical decision storage.",
+            "rationale_ref": (
+                "docs/requirements/2026-04-14-" "governed-delivery-foundations-requirements.md"
+            ),
+        }
+        decision_two = {
+            "outcome": "escalated",
+            "role": "pm",
+            "run_id": run_id,
+            "stage": "plan",
+            "initiative": "governed-delivery-foundations",
+            "phase": "v3.3",
+            "checkpoint": "plan-review",
+            "escalation_status": "open",
+            "summary": "Escalate scope expansion beyond foundations release boundary.",
+            "rationale_ref": "docs/designs/2026-04-14-governed-delivery-release-recommendation.md",
+        }
+
+        append_one = _run_decision_append(str(tmp_path), decision_one)
+        assert append_one.returncode == 0, append_one.stderr
+        append_two = _run_decision_append(str(tmp_path), decision_two)
+        assert append_two.returncode == 0, append_two.stderr
+
+        help_text = _assert_decision_help(str(tmp_path))
+        assert "append" in help_text
+        assert "list" in help_text
+        assert "render-log" in help_text
+
+        listed = run_rt("decision", "list", cwd=str(tmp_path))
+        assert listed.returncode == 0, listed.stderr
+        payload = json.loads(listed.stdout)
+        if isinstance(payload, list):
+            entries = payload
+        else:
+            entries = (
+                payload.get("entries")
+                or payload.get("decisions")
+                or payload.get("items")
+                or payload.get("records")
+                or []
+            )
+        summaries = {entry.get("summary") for entry in entries if isinstance(entry, dict)}
+        assert "Use JSONL as canonical decision storage." in summaries
+        assert "Escalate scope expansion beyond foundations release boundary." in summaries
+
+        rendered = run_rt("decision", "render-log", cwd=str(tmp_path))
+        assert rendered.returncode == 0, rendered.stderr
+        log_path = tmp_path / "docs" / "decisions" / "log.md"
+        assert log_path.exists()
+        log_text = log_path.read_text()
+        assert "Use JSONL as canonical decision storage." in log_text
+        assert "Escalate scope expansion beyond foundations release boundary." in log_text
+
+    def test_decision_append_rejects_invalid_outcome(self, tmp_path):
+        make_config(tmp_path)
+        init = run_rt("init", "--task", "decision-validation", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        invalid_decision = {
+            "outcome": "maybe",
+            "role": "architect",
+            "run_id": run_id,
+            "stage": "design",
+            "summary": "Invalid outcome should be rejected.",
+        }
+        append_invalid = _run_decision_append(str(tmp_path), invalid_decision)
+        assert append_invalid.returncode != 0
+        error_text = (append_invalid.stderr or append_invalid.stdout).lower()
+        assert "outcome" in error_text or "invalid" in error_text
+
+    def test_decision_append_rejects_unknown_run_id(self, tmp_path):
+        make_config(tmp_path)
+
+        append_invalid = _run_decision_append(
+            str(tmp_path),
+            {
+                "outcome": "autonomous",
+                "role": "architect",
+                "run_id": "20260414T999999Z",
+                "stage": "design",
+                "summary": "Unknown run should be rejected.",
+            },
+        )
+        assert append_invalid.returncode != 0
+        error_text = (append_invalid.stderr or append_invalid.stdout).lower()
+        assert "run" in error_text and "not found" in error_text
+
+    def test_decision_append_rejects_invalid_human_disposition(self, tmp_path):
+        make_config(tmp_path)
+        init = run_rt("init", "--task", "decision-validation", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        append_invalid = run_rt(
+            "decision",
+            "append",
+            "--outcome",
+            "escalated",
+            "--role",
+            "architect",
+            "--run-id",
+            run_id,
+            "--stage",
+            "design",
+            "--summary",
+            "Disposition should be validated.",
+            "--human-disposition",
+            "maybe",
+            cwd=str(tmp_path),
+        )
+        assert append_invalid.returncode != 0
+        error_text = (append_invalid.stderr or append_invalid.stdout).lower()
+        assert "human-disposition" in error_text or "invalid" in error_text
+
+    def test_decision_list_rejects_malformed_jsonl(self, tmp_path):
+        make_config(tmp_path)
+        decisions_path = tmp_path / ".agenteam" / "governance" / "decisions.jsonl"
+        decisions_path.parent.mkdir(parents=True, exist_ok=True)
+        decisions_path.write_text('{"ok": true}\nnot-json\n')
+
+        listed = run_rt("decision", "list", cwd=str(tmp_path))
+        assert listed.returncode != 0
+        error_text = (listed.stderr or listed.stdout).lower()
+        assert "malformed decision log" in error_text
+
+    def test_governance_metadata_absent_by_default_and_visible_when_present(self, tmp_path):
+        make_config(tmp_path)
+        init = run_rt("init", "--task", "governance-optional", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
+        with open(state_path) as f:
+            default_state = json.load(f)
+        assert "initiative" not in default_state
+        assert "phase" not in default_state
+        assert "checkpoint" not in default_state
+        assert "escalation_status" not in default_state
+
+        status_default = run_rt("status", run_id, cwd=str(tmp_path))
+        assert status_default.returncode == 0
+        status_default_payload = json.loads(status_default.stdout)
+        assert "initiative" not in status_default_payload
+        assert "phase" not in status_default_payload
+        assert "checkpoint" not in status_default_payload
+        assert "escalation_status" not in status_default_payload
+
+        standup_default = run_rt("standup", cwd=str(tmp_path))
+        assert standup_default.returncode == 0
+        standup_default_payload = json.loads(standup_default.stdout)
+        assert _standup_governance_value(standup_default_payload, "initiative") is None
+        assert _standup_governance_value(standup_default_payload, "phase") is None
+        assert _standup_governance_value(standup_default_payload, "checkpoint") is None
+        assert _standup_governance_value(standup_default_payload, "escalation_status") is None
+
+        default_state["initiative"] = "governed-delivery-foundations"
+        default_state["phase"] = "v3.3"
+        default_state["checkpoint"] = "plan-review"
+        default_state["escalation_status"] = "open"
+        with open(state_path, "w") as f:
+            json.dump(default_state, f, indent=2)
+
+        status_with_meta = run_rt("status", run_id, cwd=str(tmp_path))
+        assert status_with_meta.returncode == 0
+        status_payload = json.loads(status_with_meta.stdout)
+        assert status_payload["initiative"] == "governed-delivery-foundations"
+        assert status_payload["phase"] == "v3.3"
+        assert status_payload["checkpoint"] == "plan-review"
+        assert status_payload["escalation_status"] == "open"
+
+        standup_with_meta = run_rt("standup", cwd=str(tmp_path))
+        assert standup_with_meta.returncode == 0
+        standup_payload = json.loads(standup_with_meta.stdout)
+        assert _standup_governance_value(standup_payload, "initiative") == (
+            "governed-delivery-foundations"
+        )
+        assert _standup_governance_value(standup_payload, "phase") == "v3.3"
+        assert _standup_governance_value(standup_payload, "checkpoint") == "plan-review"
+        assert _standup_governance_value(standup_payload, "escalation_status") == "open"
+
+    def test_init_rejects_invalid_burn_estimate(self, tmp_path):
+        make_config(tmp_path)
+
+        init = run_rt(
+            "init",
+            "--task",
+            "bad-burn-estimate",
+            "--burn-estimate",
+            "many",
+            cwd=str(tmp_path),
+        )
+        assert init.returncode != 0
+        error_text = (init.stderr or init.stdout).lower()
+        assert "burn-estimate" in error_text or "numeric" in error_text
+
+    def test_governed_bootstrap_honors_global_config_outside_repo_root(self, tmp_path):
+        config_path = make_config(tmp_path)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        result = run_rt(
+            "--config",
+            str(config_path),
+            "governed-bootstrap",
+            cwd=str(outside),
+        )
+        assert result.returncode == 0, result.stderr
+
+        assert (tmp_path / ".agenteam" / "governance" / "operating-model.yaml").exists()
+        assert (tmp_path / "docs" / "decisions" / "log.md").exists()
+        assert not (outside / ".agenteam" / "governance" / "operating-model.yaml").exists()
+
+    def test_decision_commands_honor_global_config_outside_repo_root(self, tmp_path):
+        config_path = make_config(tmp_path)
+        init = run_rt("init", "--task", "outside-root-decision", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        append = run_rt(
+            "--config",
+            str(config_path),
+            "decision",
+            "append",
+            "--outcome",
+            "autonomous",
+            "--role",
+            "architect",
+            "--run-id",
+            run_id,
+            "--stage",
+            "design",
+            "--summary",
+            "Append from outside repo root.",
+            cwd=str(outside),
+        )
+        assert append.returncode == 0, append.stderr
+
+        listed = run_rt(
+            "--config",
+            str(config_path),
+            "decision",
+            "list",
+            "--run-id",
+            run_id,
+            cwd=str(outside),
+        )
+        assert listed.returncode == 0, listed.stderr
+        payload = json.loads(listed.stdout)
+        assert any(entry.get("summary") == "Append from outside repo root." for entry in payload)
+
+    def test_tripwire_check_matches_warn_and_block_rules(self, tmp_path):
+        make_config(tmp_path)
+        run_rt("governed-bootstrap", cwd=str(tmp_path))
+
+        check = run_rt(
+            "tripwire",
+            "check",
+            "--path",
+            "src/auth/login.py",
+            "--path",
+            "src/api/public.py",
+            cwd=str(tmp_path),
+        )
+        assert check.returncode == 0, check.stderr
+        payload = json.loads(check.stdout)
+        assert "auth-surface-change" in payload["block"]
+        assert "public-api-change" in payload["warn"]
+
+    def test_tripwire_check_matches_decision_right_rule(self, tmp_path):
+        make_config(tmp_path)
+        run_rt("governed-bootstrap", cwd=str(tmp_path))
+
+        check = run_rt(
+            "tripwire",
+            "check",
+            "--artifact-type",
+            "adr",
+            "--decision-right",
+            "schema-change",
+            cwd=str(tmp_path),
+        )
+        assert check.returncode == 0, check.stderr
+        payload = json.loads(check.stdout)
+        assert "adr-required" in payload["warn"]
+        assert payload["block"] == []
+
+    def test_tripwire_check_rejects_malformed_config(self, tmp_path):
+        make_config(tmp_path)
+        tripwires_path = tmp_path / ".agenteam" / "governance" / "tripwires.yaml"
+        tripwires_path.parent.mkdir(parents=True, exist_ok=True)
+        tripwires_path.write_text("tripwires: [\n")
+
+        check = run_rt("tripwire", "check", cwd=str(tmp_path))
+        assert check.returncode != 0
+        error_text = (check.stderr or check.stdout).lower()
+        assert "malformed tripwires config" in error_text
+
+    def test_tripwire_check_honors_global_config_outside_repo_root(self, tmp_path):
+        config_path = make_config(tmp_path)
+        run_rt("governed-bootstrap", cwd=str(tmp_path))
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        check = run_rt(
+            "--config",
+            str(config_path),
+            "tripwire",
+            "check",
+            "--path",
+            "src/auth/session.py",
+            cwd=str(outside),
+        )
+        assert check.returncode == 0, check.stderr
+        payload = json.loads(check.stdout)
+        assert "auth-surface-change" in payload["block"]
 
 
 # ---------------------------------------------------------------------------

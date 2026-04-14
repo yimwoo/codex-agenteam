@@ -268,6 +268,25 @@ def cmd_init(args, config: dict) -> None:
 
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     stage_order = [s["name"] for s in stages]
+    governance: dict = {}
+    if getattr(args, "initiative", None):
+        governance["initiative"] = args.initiative
+    if getattr(args, "phase", None):
+        governance["phase"] = args.phase
+    if getattr(args, "checkpoint", None):
+        governance["checkpoint"] = args.checkpoint
+    burn_estimate = getattr(args, "burn_estimate", None)
+    if burn_estimate is not None:
+        try:
+            governance["burn_estimate"] = float(burn_estimate)
+        except (TypeError, ValueError):
+            print(
+                json.dumps(
+                    {"error": f"Invalid --burn-estimate '{burn_estimate}'. Must be numeric."}
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     state: dict = {
         "run_id": run_id,
@@ -287,6 +306,8 @@ def cmd_init(args, config: dict) -> None:
             "queue": [],
         },
     }
+    if governance:
+        state["governance"] = governance
 
     for stage in stages:
         state["stages"][stage["name"]] = {
@@ -306,7 +327,10 @@ def cmd_init(args, config: dict) -> None:
         json.dump(state, f, indent=2)
 
     # Emit run_started event
-    append_event(run_id, "run_started", None, {"task": task, "pipeline_mode": pipeline_mode})
+    event_data = {"task": task, "pipeline_mode": pipeline_mode}
+    if governance:
+        event_data["governance"] = governance
+    append_event(run_id, "run_started", None, event_data)
 
     print(json.dumps(state))
 
@@ -502,7 +526,7 @@ def _build_progress_view(state: dict, run_id: str) -> dict:
     if events:
         last_event = events[0]
 
-    return {
+    result = {
         "run_id": run_id,
         "task": state.get("task", ""),
         "profile": state.get("profile"),
@@ -513,6 +537,10 @@ def _build_progress_view(state: dict, run_id: str) -> dict:
         "active_lock": state.get("write_locks", {}).get("active"),
         "last_event": last_event,
     }
+    governance = state.get("governance")
+    if isinstance(governance, dict):
+        result["governance"] = governance
+    return result
 
 
 def cmd_status(args, config: dict) -> None:

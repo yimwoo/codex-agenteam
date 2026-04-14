@@ -10,12 +10,24 @@ agenteam.yaml
 hotl-workflow*.md
 .hotl/
 
-# Generated docs (per-session, not repo content)
+# Public docs that are intended for GitHub live directly under docs/ as
+# top-level reference pages (for example: setup, configuration, pipeline,
+# cli, hotl). Internal planning/governance docs stay local and are not
+# published.
 docs/plans/
 docs/designs/
+docs/decisions/
+docs/requirements/
+docs/reviews/
+docs/prompts/
+docs/specs/
 docs/strategies/
 docs/research/
 docs/meetings/
+docs/ui/
+docs/README.md
+docs/benchmarking.md
+benchmarks/
 CLAUDE.md
 AGENTS.md
 

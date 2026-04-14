@@ -60,6 +60,17 @@ or restart Codex so it reloads workspace agents.
 - [**CLI Reference**](docs/cli.md) — all skills and runtime commands
 - [**HOTL Integration**](docs/hotl.md) — structured execution with the HOTL plugin
 
+## Governed Delivery Foundations
+
+AgenTeam 3.3 adds an optional governance foundation for teams handling larger
+features, multi-phase initiatives, or longer-lived delivery work. You can
+scaffold local assets with `agenteam-rt governed-bootstrap`, record structured
+decisions with `agenteam-rt decision append`, and evaluate starter tripwires
+with `agenteam-rt tripwire check`.
+
+These commands are additive. Existing quick fixes, POCs, and standard pipeline
+flows keep working the same way unless you choose to layer governance on top.
+
 ---
 
 ## Contributing

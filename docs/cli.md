@@ -50,6 +50,11 @@ agenteam-rt roles show dev
 # Initialize a run
 agenteam-rt init --task "add auth" --profile quick
 
+# Initialize a run with optional governance metadata
+agenteam-rt init --task "billing revamp" --profile standard \
+  --initiative "billing-platform" --phase "requirements" \
+  --checkpoint "kickoff" --burn-estimate 16
+
 # Dispatch a stage
 agenteam-rt dispatch implement --task "add auth" --run-id <id>
 
@@ -77,6 +82,34 @@ agenteam-rt prompt-build --run-id <id> --stage implement --role dev
 agenteam-rt run --task "add user auth" --auto-approve-gates
 agenteam-rt run --task-file seed.md --profile standard --output-dir ./out
 agenteam-rt run --run-id <id>  # resume an existing run
+```
+
+### Governed Delivery Foundations
+
+```bash
+# Scaffold local governed-delivery assets
+agenteam-rt governed-bootstrap
+
+# Append a structured decision record
+agenteam-rt decision append \
+  --outcome escalated \
+  --summary "Auth migration requires DBA approval" \
+  --initiative "platform-auth" \
+  --phase "triage" \
+  --role architect \
+  --decision-right "schema-change" \
+  --artifact-type adr \
+  --artifact-ref docs/decisions/012-auth-migration.md
+
+# List decisions (optionally filtered)
+agenteam-rt decision list --initiative platform-auth --last 10
+
+# Render Markdown decision log from structured records
+agenteam-rt decision render-log
+
+# Evaluate tripwires against changed paths or artifact context
+agenteam-rt tripwire check --path src/auth/login.py
+agenteam-rt tripwire check --artifact-type adr --decision-right schema-change
 ```
 
 ### Branch & Isolation

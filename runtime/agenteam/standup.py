@@ -9,6 +9,26 @@ from .roles import resolve_roles
 from .state import find_latest_compatible_state
 
 
+def _extract_governance(state: dict | None) -> dict | None:
+    """Return governance metadata from nested or top-level state fields."""
+    if not isinstance(state, dict):
+        return None
+
+    governance = state.get("governance")
+    if isinstance(governance, dict) and governance:
+        return governance
+
+    keys = (
+        "initiative",
+        "phase",
+        "checkpoint",
+        "burn_estimate",
+        "escalation_status",
+    )
+    extracted = {key: state.get(key) for key in keys if state.get(key) is not None}
+    return extracted or None
+
+
 def compute_health(state: dict | None) -> tuple[str, list[str]]:
     """Compute health indicator and warnings from run state.
 
@@ -76,12 +96,17 @@ def cmd_standup(args, config: dict) -> None:
     # Run summary
     run_summary = None
     stages_summary = {}
+    governance = None
     if state:
         run_summary = {
             "run_id": state.get("run_id"),
             "task": state.get("task"),
             "current_stage": state.get("current_stage"),
         }
+        governance = _extract_governance(state)
+        if isinstance(governance, dict):
+            run_summary["governance"] = governance
+            run_summary.update(governance)
         stages_summary = state.get("stages", {})
 
     memory = build_visible_memory(config, current_run_id=state.get("run_id") if state else None)
@@ -135,6 +160,9 @@ def cmd_standup(args, config: dict) -> None:
         "output_path": output_path,
         "warnings": warnings,
     }
+
+    if isinstance(governance, dict):
+        result["governance"] = governance
 
     if dispatch_list is not None:
         result["dispatch"] = dispatch_list

@@ -302,3 +302,49 @@ python3 runtime/agenteam_rt.py validate --strict
 ```
 
 Validation checks: required fields, enum values, stage-role cross-references, profile consistency, duplicate stage names, rework_to targets, and suggests corrections for typos.
+
+## Optional Governance Run Metadata
+
+For governed-delivery foundations, you can attach contextual metadata when creating a run:
+
+```bash
+agenteam-rt init --task "major feature" \
+  --initiative "checkout-v2" \
+  --phase "plan" \
+  --checkpoint "kickoff" \
+  --burn-estimate 24
+```
+
+These fields are optional and backward compatible. When present they are stored under `state.governance` and surfaced in `status` and `standup`.
+
+They do not change pipeline behavior by themselves. Use them when you want
+extra context on larger initiatives, and ignore them for small tasks or POCs.
+
+## Governed Delivery Tripwires
+
+`agenteam-rt governed-bootstrap` creates a starter tripwire catalog at:
+
+```text
+.agenteam/governance/tripwires.yaml
+```
+
+Initial tripwires support a small, config-driven format with these match fields:
+
+- `path_glob`
+- `artifact_type`
+- `decision_right`
+
+And these severities:
+
+- `warn`
+- `block`
+
+Evaluate them with:
+
+```bash
+agenteam-rt tripwire check --path src/auth/login.py
+agenteam-rt tripwire check --artifact-type adr --decision-right schema-change
+```
+
+Tripwires are config-driven and opt-in. This is a minimal foundation for
+pre-commit and CI integration, not a full policy engine.

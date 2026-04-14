@@ -47,6 +47,12 @@ you need personal overrides (e.g., different model preferences).
 
 ## Next Steps
 
+- Optional: scaffold governed-delivery foundations if your team wants
+  lightweight decision tracking and tripwire checks for larger work
+  - `agenteam-rt governed-bootstrap`
+  - optional validation helpers:
+    - `agenteam-rt decision render-log`
+    - `agenteam-rt tripwire check --path src/auth/login.py`
 - [Configuration Reference](configuration.md) -- customize roles, isolation, and pipeline
 - [Pipeline & Profiles](pipeline.md) -- stages, gates, and task-sized profiles
 - [CLI Reference](cli.md) -- all commands and skills

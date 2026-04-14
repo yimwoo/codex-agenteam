@@ -19,6 +19,13 @@ from .dispatch import (
 from .events import cmd_event_append, cmd_event_list, cmd_event_tail
 from .gates import cmd_gate_eval
 from .generate import cmd_generate
+from .governance import (
+    cmd_decision_append,
+    cmd_decision_list,
+    cmd_decision_render_log,
+    cmd_governed_bootstrap,
+    cmd_tripwire_check,
+)
 from .hotl import cmd_health, cmd_hotl_check
 from .hotl_adapter import cmd_hotl_skills
 from .migrate import cmd_migrate
@@ -46,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_init = sub.add_parser("init", help="Initialize a run")
     p_init.add_argument("--task", required=False, default="unnamed task")
     p_init.add_argument("--profile", required=False, default=None)
+    p_init.add_argument("--initiative", required=False, default=None)
+    p_init.add_argument("--phase", required=False, default=None)
+    p_init.add_argument("--checkpoint", required=False, default=None)
+    p_init.add_argument("--burn-estimate", dest="burn_estimate", required=False, default=None)
+
+    # governed-bootstrap
+    sub.add_parser(
+        "governed-bootstrap",
+        help="Scaffold local governed-delivery assets under .agenteam/ and docs/",
+    )
 
     # generate
     sub.add_parser("generate", help="Generate .codex/agents/*.toml")
@@ -256,6 +273,49 @@ def build_parser() -> argparse.ArgumentParser:
     p_history_list = p_history_sub.add_parser("list", help="List recent history entries")
     p_history_list.add_argument("--last", type=int, default=10)
 
+    # decision
+    p_decision = sub.add_parser("decision", help="Structured governance decision log commands")
+    p_decision_sub = p_decision.add_subparsers(dest="decision_cmd")
+
+    p_decision_append = p_decision_sub.add_parser("append", help="Append a decision record")
+    p_decision_append.add_argument("--outcome", required=True)
+    p_decision_append.add_argument("--summary", required=True)
+    p_decision_append.add_argument("--initiative", default=None)
+    p_decision_append.add_argument("--phase", default=None)
+    p_decision_append.add_argument("--checkpoint", default=None)
+    p_decision_append.add_argument("--role", default=None)
+    p_decision_append.add_argument("--run-id", dest="run_id", default=None)
+    p_decision_append.add_argument("--stage", default=None)
+    p_decision_append.add_argument("--artifact-type", dest="artifact_type", default=None)
+    p_decision_append.add_argument("--artifact-ref", dest="artifact_ref", default=None)
+    p_decision_append.add_argument("--decision-right", dest="decision_right", default=None)
+    p_decision_append.add_argument("--tripwire-id", dest="tripwire_id", default=None)
+    p_decision_append.add_argument("--rationale", default=None)
+    p_decision_append.add_argument("--human-disposition", dest="human_disposition", default=None)
+
+    p_decision_list = p_decision_sub.add_parser("list", help="List decision records")
+    p_decision_list.add_argument("--outcome", default=None)
+    p_decision_list.add_argument("--initiative", default=None)
+    p_decision_list.add_argument("--phase", default=None)
+    p_decision_list.add_argument("--role", default=None)
+    p_decision_list.add_argument("--run-id", dest="run_id", default=None)
+    p_decision_list.add_argument("--last", type=int, default=None)
+
+    p_decision_render = p_decision_sub.add_parser(
+        "render-log", help="Render docs/decisions/log.md from structured decision records"
+    )
+    p_decision_render.add_argument("--output", default=None)
+
+    # tripwire
+    p_tripwire = sub.add_parser("tripwire", help="Governed delivery tripwire commands")
+    p_tripwire_sub = p_tripwire.add_subparsers(dest="tripwire_cmd")
+    p_tripwire_check = p_tripwire_sub.add_parser(
+        "check", help="Evaluate configured tripwires against file/artifact context"
+    )
+    p_tripwire_check.add_argument("--path", action="append", default=[])
+    p_tripwire_check.add_argument("--artifact-type", dest="artifact_type", default=None)
+    p_tripwire_check.add_argument("--decision-right", dest="decision_right", default=None)
+
     return parser
 
 
@@ -280,6 +340,10 @@ def main() -> None:
         cmd_resume_detect(args)
         return
 
+    if args.command == "governed-bootstrap":
+        cmd_governed_bootstrap(args)
+        return
+
     if args.command == "event":
         if args.event_cmd == "append":
             cmd_event_append(args)
@@ -299,6 +363,26 @@ def main() -> None:
             cmd_history_list(args)
         else:
             print(json.dumps({"error": "Unknown history subcommand"}), file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.command == "decision":
+        if args.decision_cmd == "append":
+            cmd_decision_append(args)
+        elif args.decision_cmd == "list":
+            cmd_decision_list(args)
+        elif args.decision_cmd == "render-log":
+            cmd_decision_render_log(args)
+        else:
+            print(json.dumps({"error": "Unknown decision subcommand"}), file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.command == "tripwire":
+        if args.tripwire_cmd == "check":
+            cmd_tripwire_check(args)
+        else:
+            print(json.dumps({"error": "Unknown tripwire subcommand"}), file=sys.stderr)
             sys.exit(1)
         return
 
