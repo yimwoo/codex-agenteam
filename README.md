@@ -62,7 +62,7 @@ or restart Codex so it reloads workspace agents.
 
 ## Governed Delivery Foundations
 
-AgenTeam 3.3 adds an optional governance foundation for teams handling larger
+AgenTeam 3.4 adds an optional governance foundation for teams handling larger
 features, multi-phase initiatives, or longer-lived delivery work. You can
 scaffold local assets with `agenteam-rt governed-bootstrap`, record structured
 decisions with `agenteam-rt decision append`, and evaluate starter tripwires
