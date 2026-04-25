@@ -148,6 +148,28 @@ def _record_gate(run_id: str, stage: str, gate_type: str, result: str) -> None:
     append_event(run_id, "stage_gated", stage, {"gate_type": gate_type, "result": result})
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
+def _record_role_artifacts(run_id: str, stage: str, role_name: str, paths: list[Path]) -> None:
+    """Record known runner artifacts for a role."""
+    state_path = Path.cwd() / ".agenteam" / "state" / f"{run_id}.json"
+    if not state_path.exists():
+        return
+    state = _load_state(run_id)
+    stage_state = state.get("stages", {}).get(stage)
+    if stage_state is None:
+        return
+    role_artifacts = stage_state.setdefault("role_artifacts", {})
+    role_artifacts[role_name] = [_display_path(path) for path in paths]
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+
+
 def _persist_history(run_id: str) -> None:
     """Persist run history without printing into the runner JSONL stream."""
     summary = _build_run_summary(run_id)
@@ -231,9 +253,15 @@ def _run_role(
     prompt_data = build_prompt(run_id, stage, role_name, config)
     prompt_text = prompt_data.get("prompt", "")
 
+    prompt_path = role_dir / "prompt.txt"
+    prompt_build_path = role_dir / "prompt-build.json"
+    stdout_path = role_dir / "stdout.txt"
+    stderr_path = role_dir / "stderr.txt"
+    exec_path = role_dir / "exec.json"
+
     # Write audit files
-    (role_dir / "prompt.txt").write_text(prompt_text)
-    (role_dir / "prompt-build.json").write_text(json.dumps(prompt_data, indent=2))
+    prompt_path.write_text(prompt_text)
+    prompt_build_path.write_text(json.dumps(prompt_data, indent=2))
 
     _emit_event(
         {"type": "role_started", "stage": stage, "role": role_name, "ts": _now_iso()},
@@ -268,8 +296,8 @@ def _run_role(
     duration = round(time.time() - start, 1)
 
     # Write output files
-    (role_dir / "stdout.txt").write_text(stdout)
-    (role_dir / "stderr.txt").write_text(stderr)
+    stdout_path.write_text(stdout)
+    stderr_path.write_text(stderr)
 
     exec_result = {
         "exit_code": exit_code,
@@ -278,7 +306,13 @@ def _run_role(
         "stage": stage,
         "role": role_name,
     }
-    (role_dir / "exec.json").write_text(json.dumps(exec_result, indent=2))
+    exec_path.write_text(json.dumps(exec_result, indent=2))
+    _record_role_artifacts(
+        run_id,
+        stage,
+        role_name,
+        [prompt_path, prompt_build_path, stdout_path, stderr_path, exec_path],
+    )
 
     _emit_event(
         {

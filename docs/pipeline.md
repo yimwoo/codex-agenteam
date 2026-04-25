@@ -115,6 +115,20 @@ The runtime re-verifies the last incomplete stage before continuing, and asks be
 For non-interactive execution, `agenteam-rt run --run-id <id>` skips completed
 or skipped stages and resumes at the first incomplete stage.
 
+## Run Trace
+
+Use `trace` when a run is failed, blocked, stale, or otherwise unclear:
+
+```bash
+agenteam-rt trace --run-id <id>
+```
+
+The trace derives a diagnostic JSON view from run state and events. It includes
+health, stale-run status, stage retry budgets, gate state, failure reasons,
+final verification results, known runner artifacts, and a suggested next
+action. `status --progress` uses the same trace data but keeps only the compact
+progress fields.
+
 ## Final Verification
 
 After all stages complete, optional final verification runs:

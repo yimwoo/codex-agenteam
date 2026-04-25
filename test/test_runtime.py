@@ -7540,3 +7540,252 @@ raise SystemExit(1 if count == 0 else 0)
         rework = [event for event in events if event["type"] == "runner_rework"]
         assert rework[-1]["stage"] == "test"
         assert rework[-1]["data"]["rework_to"] == "implement"
+
+        trace_result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+        trace = json.loads(trace_result.stdout)
+        stages = {stage["name"]: stage for stage in trace["stages"]}
+        assert stages["test"]["rework_to"] == "implement"
+        assert stages["test"]["verify"]["attempts"] == 2
+        assert any(
+            path.endswith("/implement/dev/exec.json") for path in stages["implement"]["artifacts"]
+        )
+
+    def test_trace_reports_role_failure_next_action_and_artifacts(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "trace role failure",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, exit_codes="9"),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        assert result.returncode == 0, result.stderr
+        trace = json.loads(result.stdout)
+        assert trace["health"] == "off-track"
+        assert trace["next_action"]["kind"] == "inspect_failure"
+        stage = trace["stages"][0]
+        assert stage["failure"]["reason"] == "role failed"
+        assert stage["failure"]["role"] == "dev"
+        assert stage["failure"]["exit_code"] == 9
+        assert any(path.endswith("/implement/dev/exec.json") for path in stage["artifacts"])
+
+    def test_trace_and_progress_report_blocked_gate_next_action(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "review", "roles": ["reviewer"], "gate": "reviewer"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "trace gate block",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        trace_result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+        progress_result = run_rt("status", state["run_id"], "--progress", cwd=str(tmp_path))
+
+        trace = json.loads(trace_result.stdout)
+        progress = json.loads(progress_result.stdout)
+        assert trace["health"] == "at-risk"
+        assert trace["next_action"]["kind"] == "approve_gate"
+        assert trace["stages"][0]["gate"] == {
+            "type": "reviewer",
+            "result": "blocked",
+            "agent": "reviewer",
+        }
+        assert progress["health"] == "at-risk"
+        assert progress["next_action"]["kind"] == "approve_gate"
+        assert progress["current_stage"]["gate"]["result"] == "blocked"
+
+    def test_trace_reports_verify_retry_exhaustion(self, tmp_path):
+        verify_script = tmp_path / "verify_fail.py"
+        verify_script.write_text("raise SystemExit(2)\n")
+        self._write_runner_config(
+            tmp_path,
+            [
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 1,
+                }
+            ],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "trace verify fail",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        trace = json.loads(result.stdout)
+        stage = trace["stages"][0]
+        assert trace["health"] == "off-track"
+        assert stage["verify"]["result"] == "fail"
+        assert stage["verify"]["attempts"] == 2
+        assert stage["retry_budget"] == {"used": 1, "max": 1, "remaining": 0}
+        assert stage["failure"]["reason"] == "verify failed"
+        progress_result = run_rt("status", state["run_id"], "--progress", cwd=str(tmp_path))
+        progress = json.loads(progress_result.stdout)
+        assert progress["current_stage"]["verify_attempt"] == 2
+        assert progress["current_stage"]["max_retries"] == 1
+
+    def test_trace_reports_final_verify_failure(self, tmp_path):
+        final_verify = tmp_path / "final_verify.py"
+        final_verify.write_text("raise SystemExit(3)\n")
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={
+                "final_verify": [f"{sys.executable} {final_verify}"],
+                "final_verify_policy": "block",
+                "final_verify_max_retries": 0,
+            },
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "trace final verify fail",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        trace_result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+        progress_result = run_rt("status", state["run_id"], "--progress", cwd=str(tmp_path))
+
+        trace = json.loads(trace_result.stdout)
+        progress = json.loads(progress_result.stdout)
+        assert trace["health"] == "off-track"
+        assert trace["next_action"]["kind"] == "inspect_failure"
+        assert trace["next_action"]["reason"] == "final verification failed"
+        assert trace["final_verify"]["passed"] is False
+        assert trace["final_verify"]["policy"] == "block"
+        assert trace["final_verify"]["attempts"] == 1
+        assert trace["final_verify"]["last_result"]["exit_code"] == 3
+        assert progress["final_verify"]["passed"] is False
+
+    def test_trace_reports_stale_stopped_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "trace stale", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: (
+                state.update({"status": "stopped", "last_update": "2020-01-01T00:00:00Z"}),
+                state["stages"]["implement"].update({"status": "dispatched"}),
+            ),
+        )
+        events_path = tmp_path / ".agenteam" / "events" / f"{run_id}.jsonl"
+        events = [json.loads(line) for line in events_path.read_text().splitlines()]
+        for event in events:
+            event["ts"] = "2020-01-01T00:00:00Z"
+        events_path.write_text("\n".join(json.dumps(event) for event in events) + "\n")
+
+        result = run_rt(
+            "trace",
+            "--run-id",
+            run_id,
+            "--stale-threshold-minutes",
+            "60",
+            cwd=str(tmp_path),
+        )
+
+        trace = json.loads(result.stdout)
+        assert trace["health"] == "at-risk"
+        assert trace["stale"]["is_stale"] is True
+        assert trace["next_action"]["kind"] == "resume"
+
+    def test_trace_stale_uses_recent_event_timestamp(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "trace fresh event", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: state.update(
+                {"status": "running", "last_update": "2020-01-01T00:00:00Z"}
+            ),
+        )
+
+        result = run_rt(
+            "trace",
+            "--run-id",
+            run_id,
+            "--stale-threshold-minutes",
+            "60",
+            cwd=str(tmp_path),
+        )
+
+        trace = json.loads(result.stdout)
+        assert trace["stale"]["is_stale"] is False
+        assert trace["stale"]["state_last_update"] == "2020-01-01T00:00:00Z"
+        assert trace["stale"]["event_last_update"] is not None
+
+    def test_trace_stale_threshold_zero_is_honored(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "trace threshold zero", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+
+        result = run_rt(
+            "trace",
+            "--run-id",
+            run_id,
+            "--stale-threshold-minutes",
+            "0",
+            cwd=str(tmp_path),
+        )
+
+        trace = json.loads(result.stdout)
+        assert trace["stale"]["threshold_minutes"] == 0
+        assert trace["stale"]["is_stale"] is True
+
+    def test_trace_missing_run_returns_error(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+
+        result = run_rt("trace", "--run-id", "missing-run", cwd=str(tmp_path))
+
+        assert result.returncode != 0
+        assert "Run missing-run not found" in result.stderr

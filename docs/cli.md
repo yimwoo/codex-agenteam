@@ -68,6 +68,10 @@ agenteam-rt status
 # Check run status for a specific run
 agenteam-rt status <run-id>
 
+# Show diagnostic trace for a run
+agenteam-rt trace --run-id <id>
+agenteam-rt trace --run-id <id> --stale-threshold-minutes 30
+
 # Get verification plan for a stage
 agenteam-rt verify-plan implement --run-id <id>
 
