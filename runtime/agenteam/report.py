@@ -167,9 +167,13 @@ def _extract_lessons(run_id: str, summary: dict, state: dict) -> dict:
 
     # Final verify: check if all passed
     final_results = state.get("final_verify_results", [])
-    final_verify_passed = (
-        all(r.get("result") == "pass" for r in final_results) if final_results else True
-    )
+    final_verify_passed = state.get("final_verify_passed")
+    if final_verify_passed is None and final_results:
+        final_verify_passed = all(
+            r.get("passed") is True or r.get("result") == "pass" for r in final_results
+        )
+    if final_verify_passed is None:
+        final_verify_passed = True
 
     # Stage counts
     stages = state.get("stages", {})

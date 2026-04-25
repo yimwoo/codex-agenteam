@@ -2,6 +2,12 @@
 
 When you give `@ATeam` a task, it runs the full development pipeline.
 
+The skill-driven pipeline uses runtime planning and policy commands to resolve
+roles, stages, gates, verification, and state. The non-interactive
+`agenteam-rt run` command is the local executor facade for automation: it uses
+the same run state, builds role prompts, invokes `codex exec`, records durable
+events, and writes `.agenteam/runs/<run-id>/` artifacts.
+
 ## Stages
 
 | Stage | Role(s) | Output | Gate |
@@ -68,6 +74,10 @@ pipeline:
 | `max_retries` | Number of re-dispatch attempts on verify failure (default: 0) |
 | `rework_to` | Stage to loop back to on verify failure |
 
+In `agenteam-rt run`, a non-zero role exit fails the stage before verification
+or gates run. Verification failures are recorded as attempts and retried up to
+`max_retries`.
+
 ## Gates
 
 Gates control when the pipeline advances:
@@ -76,6 +86,10 @@ Gates control when the pipeline advances:
 |-----------|----------|
 | `auto` | Advances automatically after verification |
 | `human` | Pauses for your approval before advancing |
+
+`agenteam-rt run` blocks on `human`, `reviewer`, and `qa` gates by default and
+exits non-zero with JSON error details. Pass `--auto-approve-gates` only when an
+unattended run should approve those gates automatically.
 
 Gate criteria can be configured per stage:
 
@@ -97,6 +111,9 @@ Interrupted runs are detected automatically at session start:
 ```
 
 The runtime re-verifies the last incomplete stage before continuing, and asks before re-dispatching expensive work. Config changes since the run started are detected and flagged.
+
+For non-interactive execution, `agenteam-rt run --run-id <id>` skips completed
+or skipped stages and resumes at the first incomplete stage.
 
 ## Final Verification
 

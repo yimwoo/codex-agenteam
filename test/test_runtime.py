@@ -6816,6 +6816,78 @@ class TestPromptBuild:
 
 
 class TestRunner:
+    def _write_runner_config(self, tmp_path, stages, extra=None):
+        config = {
+            "version": "1",
+            "pipeline": {"stages": stages},
+            "final_verify": [],
+        }
+        if extra:
+            config.update(extra)
+        config_path = tmp_path / "agenteam.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+        return config_path
+
+    def _write_fake_codex(self, tmp_path):
+        fake = tmp_path / "fake-codex"
+        fake.write_text(
+            """#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+count_file = Path(os.environ["FAKE_CODEX_COUNT_FILE"])
+try:
+    count = int(count_file.read_text())
+except FileNotFoundError:
+    count = 0
+codes = [int(part) for part in os.environ.get("FAKE_CODEX_EXIT_CODES", "0").split(",")]
+code = codes[count] if count < len(codes) else codes[-1]
+count_file.write_text(str(count + 1))
+prompt = sys.stdin.read()
+print('{"type":"turn.completed","prompt_chars":%d}' % len(prompt))
+sys.exit(code)
+"""
+        )
+        fake.chmod(0o755)
+        return fake
+
+    def _runner_env(self, tmp_path, exit_codes="0"):
+        count_file = tmp_path / "fake-codex-count.txt"
+        return {
+            "FAKE_CODEX_COUNT_FILE": str(count_file),
+            "FAKE_CODEX_EXIT_CODES": exit_codes,
+        }
+
+    def _state_for_single_run(self, tmp_path):
+        state_files = list((tmp_path / ".agenteam" / "state").glob("*.json"))
+        assert len(state_files) == 1
+        with open(state_files[0]) as f:
+            return json.load(f)
+
+    def _events_for_run(self, tmp_path, run_id):
+        events_path = tmp_path / ".agenteam" / "events" / f"{run_id}.jsonl"
+        assert events_path.exists()
+        return [json.loads(line) for line in events_path.read_text().splitlines() if line]
+
+    def _stdout_events(self, result):
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        events = [json.loads(line) for line in lines]
+        assert all("type" in event for event in events)
+        return events
+
+    def _update_single_run_state(self, tmp_path, update):
+        state_files = list((tmp_path / ".agenteam" / "state").glob("*.json"))
+        assert len(state_files) == 1
+        state_path = state_files[0]
+        with open(state_path) as f:
+            state = json.load(f)
+        update(state)
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+        return state["run_id"]
+
     def test_parse_codex_args_handles_shell_quoting_and_bare_flags(self):
         from runtime.agenteam.runner import _parse_codex_args
 
@@ -6927,3 +6999,544 @@ class TestRunner:
         out = _setup_output_dir(str(tmp_path / "custom-out"), "test-run")
         assert out.exists()
         assert out == tmp_path / "custom-out"
+
+    def test_run_role_failure_fails_stage_and_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        output_dir = tmp_path / "runner-out"
+
+        r = run_rt(
+            "run",
+            "--task",
+            "role failure",
+            "--codex-bin",
+            str(fake_codex),
+            "--output-dir",
+            str(output_dir),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, exit_codes="7"),
+        )
+
+        assert r.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "failed"
+        assert state["stages"]["implement"]["status"] == "failed"
+        assert "gate_result" not in state["stages"]["implement"]
+        assert (output_dir / "implement" / "dev" / "exec.json").exists()
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        role_finished = [event for event in events if event["type"] == "role_finished"]
+        assert role_finished[-1]["data"]["exit_code"] == 7
+        stage_completed = [event for event in events if event["type"] == "stage_completed"]
+        assert stage_completed[-1]["data"]["result"] == "failed"
+        assert stage_completed[-1]["data"]["reason"] == "role failed"
+
+    def test_run_stdout_is_only_jsonl_events_and_history_is_quiet(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "jsonl stream",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        stdout_events = self._stdout_events(r)
+        assert stdout_events[-1]["type"] == "run_finished"
+        state = self._state_for_single_run(tmp_path)
+        assert (tmp_path / ".agenteam" / "history" / f"{state['run_id']}.json").exists()
+
+    def test_run_retries_verify_failure_then_completes(self, tmp_path):
+        verify_script = tmp_path / "verify_once.py"
+        verify_count = tmp_path / "verify-count.txt"
+        verify_script.write_text(
+            f"""from pathlib import Path
+path = Path({str(verify_count)!r})
+try:
+    count = int(path.read_text())
+except FileNotFoundError:
+    count = 0
+path.write_text(str(count + 1))
+raise SystemExit(1 if count == 0 else 0)
+"""
+        )
+        self._write_runner_config(
+            tmp_path,
+            [
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 1,
+                }
+            ],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "verify retry",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, exit_codes="0"),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        stage = state["stages"]["implement"]
+        assert state["status"] == "completed"
+        assert stage["status"] == "completed"
+        assert [attempt["result"] for attempt in stage["verify_attempts"]] == ["fail", "pass"]
+        assert int(verify_count.read_text()) == 2
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        assert any(event["type"] == "runner_retry" for event in events)
+        assert sum(1 for event in events if event["type"] == "role_finished") == 2
+
+    def test_run_blocks_human_gate_without_auto_approve(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "strategy", "roles": ["pm"], "gate": "human"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "blocked gate",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode != 0
+        assert "Human gate" in r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "blocked"
+        assert state["stages"]["strategy"]["status"] == "gated"
+        assert state["stages"]["strategy"]["gate_result"] == "blocked"
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        gated = [event for event in events if event["type"] == "stage_gated"]
+        assert gated[-1]["data"] == {"gate_type": "human", "result": "blocked"}
+
+    def test_run_executes_final_verify_and_blocks_failure(self, tmp_path):
+        final_verify = tmp_path / "final_verify.py"
+        final_verify.write_text("raise SystemExit(3)\n")
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={
+                "final_verify": [f"{sys.executable} {final_verify}"],
+                "final_verify_policy": "block",
+            },
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "final verify",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "failed"
+        assert state["stages"]["implement"]["status"] == "completed"
+        assert state["final_verify_passed"] is False
+        assert state["final_verify_results"][0]["exit_code"] == 3
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        assert any(event["type"] == "final_verify_started" for event in events)
+        assert any(
+            event["type"] == "final_verify_finished" and event["data"]["result"] == "fail"
+            for event in events
+        )
+
+    def test_run_final_verify_warn_policy_completes_on_failure(self, tmp_path):
+        final_verify = tmp_path / "final_verify_warn.py"
+        final_verify.write_text("raise SystemExit(4)\n")
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={
+                "final_verify": [f"{sys.executable} {final_verify}"],
+                "final_verify_policy": "warn",
+            },
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "final verify warn",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "completed"
+        assert state["final_verify_passed"] is False
+
+    def test_run_final_verify_retries_transient_failure(self, tmp_path):
+        final_verify = tmp_path / "final_verify_retry.py"
+        final_count = tmp_path / "final-count.txt"
+        final_verify.write_text(
+            f"""from pathlib import Path
+path = Path({str(final_count)!r})
+try:
+    count = int(path.read_text())
+except FileNotFoundError:
+    count = 0
+path.write_text(str(count + 1))
+raise SystemExit(1 if count == 0 else 0)
+"""
+        )
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={
+                "final_verify": [f"{sys.executable} {final_verify}"],
+                "final_verify_max_retries": 1,
+            },
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "final verify retry",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["final_verify_passed"] is True
+        assert [result["passed"] for result in state["final_verify_results"]] == [False, True]
+        assert final_count.read_text() == "2"
+
+        history_path = tmp_path / ".agenteam" / "history" / f"{state['run_id']}.json"
+        with open(history_path) as f:
+            history = json.load(f)
+        assert history["lessons"]["final_verify_passed"] is True
+
+    def test_run_resume_skips_completed_stage(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [
+                {"name": "research", "roles": ["researcher"], "gate": "auto"},
+                {"name": "implement", "roles": ["dev"], "gate": "auto"},
+            ],
+        )
+        init = run_rt("init", "--task", "resume runner", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = json.loads(init.stdout)["run_id"]
+        state_path = tmp_path / ".agenteam" / "state" / f"{run_id}.json"
+        with open(state_path) as f:
+            state = json.load(f)
+        state["stages"]["research"]["status"] = "completed"
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+
+        fake_codex = self._write_fake_codex(tmp_path)
+        r = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "completed"
+        assert state["stages"]["research"]["status"] == "completed"
+        assert state["stages"]["implement"]["status"] == "completed"
+        assert (tmp_path / "fake-codex-count.txt").read_text() == "1"
+
+    def test_run_resume_can_auto_approve_blocked_gate_without_rerun(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "strategy", "roles": ["pm"], "gate": "human"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        env = self._runner_env(tmp_path)
+        blocked = run_rt(
+            "run",
+            "--task",
+            "resume gate",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=env,
+        )
+        assert blocked.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        run_id = state["run_id"]
+        assert state["status"] == "blocked"
+        assert state["stages"]["strategy"]["status"] == "gated"
+        assert (tmp_path / "fake-codex-count.txt").read_text() == "1"
+
+        resumed = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            "--auto-approve-gates",
+            cwd=str(tmp_path),
+            env=env,
+        )
+
+        assert resumed.returncode == 0, resumed.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "completed"
+        assert state["stages"]["strategy"]["status"] == "completed"
+        assert state["stages"]["strategy"]["gate_result"] == "approved"
+        assert (tmp_path / "fake-codex-count.txt").read_text() == "1"
+
+    def test_run_resume_from_dispatched_status(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "resume dispatched", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: state["stages"]["implement"].update({"status": "dispatched"}),
+        )
+        assert run_id == json.loads(init.stdout)["run_id"]
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["stages"]["implement"]["status"] == "completed"
+
+    def test_run_resume_from_verifying_status(self, tmp_path):
+        verify_script = tmp_path / "verify_pass.py"
+        verify_script.write_text("raise SystemExit(0)\n")
+        self._write_runner_config(
+            tmp_path,
+            [
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                }
+            ],
+        )
+        init = run_rt("init", "--task", "resume verifying", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: state["stages"]["implement"].update({"status": "verifying"}),
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["stages"]["implement"]["status"] == "completed"
+        assert not (tmp_path / "fake-codex-count.txt").exists()
+
+    def test_run_resume_from_passed_status_goes_to_gate(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "strategy", "roles": ["pm"], "gate": "human"}],
+        )
+        init = run_rt("init", "--task", "resume passed", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: state["stages"]["strategy"].update({"status": "passed"}),
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            "--auto-approve-gates",
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["stages"]["strategy"]["status"] == "completed"
+        assert state["stages"]["strategy"]["gate_result"] == "approved"
+        assert not (tmp_path / "fake-codex-count.txt").exists()
+
+    def test_run_resume_stopped_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "resume stopped", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: (
+                state.update({"status": "stopped"}),
+                state["stages"]["implement"].update({"status": "dispatched"}),
+            ),
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--run-id",
+            run_id,
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "completed"
+
+    def test_run_verify_retry_exhaustion_fails(self, tmp_path):
+        verify_script = tmp_path / "verify_fail.py"
+        verify_script.write_text("raise SystemExit(2)\n")
+        self._write_runner_config(
+            tmp_path,
+            [
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 1,
+                }
+            ],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "retry exhausted",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "failed"
+        assert state["stages"]["implement"]["status"] == "failed"
+        assert [
+            attempt["result"] for attempt in state["stages"]["implement"]["verify_attempts"]
+        ] == [
+            "fail",
+            "fail",
+        ]
+
+    def test_run_rework_to_dispatches_repair_roles_then_retries_stage(self, tmp_path):
+        verify_script = tmp_path / "verify_after_rework.py"
+        verify_count = tmp_path / "verify-rework-count.txt"
+        verify_script.write_text(
+            f"""from pathlib import Path
+path = Path({str(verify_count)!r})
+try:
+    count = int(path.read_text())
+except FileNotFoundError:
+    count = 0
+path.write_text(str(count + 1))
+raise SystemExit(1 if count == 0 else 0)
+"""
+        )
+        self._write_runner_config(
+            tmp_path,
+            [
+                {"name": "implement", "roles": ["dev"], "gate": "auto"},
+                {
+                    "name": "test",
+                    "roles": ["qa"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 0,
+                    "rework_to": "implement",
+                },
+            ],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt(
+            "run",
+            "--task",
+            "rework runner",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert r.returncode == 0, r.stderr
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "completed"
+        assert state["stages"]["implement"]["status"] == "completed"
+        assert state["stages"]["test"]["status"] == "completed"
+        assert [attempt["result"] for attempt in state["stages"]["test"]["verify_attempts"]] == [
+            "fail",
+            "pass",
+        ]
+        assert (tmp_path / "fake-codex-count.txt").read_text() == "3"
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        rework = [event for event in events if event["type"] == "runner_rework"]
+        assert rework[-1]["stage"] == "test"
+        assert rework[-1]["data"]["rework_to"] == "implement"
