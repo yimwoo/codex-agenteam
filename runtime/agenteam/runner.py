@@ -10,11 +10,12 @@ from pathlib import Path
 
 from .events import append_event
 from .prompt import build_prompt
-from .report import cmd_history_append
+from .report import _build_run_summary, _extract_lessons
 from .state import (
     cmd_init,
 )
 from .transitions import transition
+from .verify import detect_verify_command
 
 
 def _now_iso() -> str:
@@ -81,6 +82,86 @@ def _load_state(run_id: str) -> dict:
         return json.load(f)
 
 
+def _save_state(run_id: str, state: dict) -> None:
+    """Save run state."""
+    state_path = Path.cwd() / ".agenteam" / "state" / f"{run_id}.json"
+    with open(state_path, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def _set_run_status(run_id: str, status: str) -> None:
+    """Persist the run-level status."""
+    state = _load_state(run_id)
+    state["status"] = status
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+
+
+def _record_verify_attempt(
+    run_id: str,
+    stage: str,
+    result: str,
+    command: str,
+    output: str = "",
+    rework_stage: str | None = None,
+) -> int:
+    """Record one verify attempt without printing to stdout."""
+    state = _load_state(run_id)
+    stage_state = state.get("stages", {}).get(stage)
+    if stage_state is None:
+        print(json.dumps({"error": f"Stage '{stage}' not found in state"}), file=sys.stderr)
+        sys.exit(1)
+
+    attempts = stage_state.setdefault("verify_attempts", [])
+    attempt_num = len(attempts) + 1
+    entry: dict = {"attempt": attempt_num, "result": result}
+    if output:
+        entry["output"] = output
+    if rework_stage:
+        entry["rework_stage"] = rework_stage
+    attempts.append(entry)
+    stage_state["verify_result"] = result
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+
+    event_data: dict = {"result": result, "command": command, "attempt": attempt_num}
+    if rework_stage:
+        event_data["rework_stage"] = rework_stage
+    append_event(run_id, "stage_verified", stage, event_data)
+    return attempt_num
+
+
+def _record_gate(run_id: str, stage: str, gate_type: str, result: str) -> None:
+    """Record a gate decision without printing to stdout."""
+    state = _load_state(run_id)
+    stage_state = state.get("stages", {}).get(stage)
+    if stage_state is None:
+        print(json.dumps({"error": f"Stage '{stage}' not found in state"}), file=sys.stderr)
+        sys.exit(1)
+
+    stage_state["gate"] = gate_type
+    stage_state["gate_result"] = result
+    if gate_type in ("reviewer", "qa"):
+        stage_state["gate_agent"] = gate_type
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+    append_event(run_id, "stage_gated", stage, {"gate_type": gate_type, "result": result})
+
+
+def _persist_history(run_id: str) -> None:
+    """Persist run history without printing into the runner JSONL stream."""
+    summary = _build_run_summary(run_id)
+    state = _load_state(run_id)
+    summary["profile"] = state.get("profile")
+    summary["lessons"] = _extract_lessons(run_id, summary, state)
+
+    history_dir = Path.cwd() / ".agenteam" / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_path = history_dir / f"{run_id}.json"
+    with open(history_path, "w") as f:
+        json.dump(summary, f, indent=2)
+
+
 def _bootstrap(args, config: dict) -> str:
     """Bootstrap a run: resume existing or create new. Returns run_id."""
     run_id = getattr(args, "run_id", None)
@@ -89,7 +170,7 @@ def _bootstrap(args, config: dict) -> str:
         # Resume: state must exist
         state = _load_state(run_id)
         status = state.get("status", "")
-        if status in ("completed", "failed", "stopped"):
+        if status in ("completed", "failed"):
             print(
                 json.dumps({"error": f"Run {run_id} is already {status}. Start a new run."}),
                 file=sys.stderr,
@@ -158,6 +239,7 @@ def _run_role(
         {"type": "role_started", "stage": stage, "role": role_name, "ts": _now_iso()},
         events_file,
     )
+    append_event(run_id, "role_started", stage, {"role": role_name})
 
     start = time.time()
     cmd = [codex_bin, "exec", "--json", "--full-auto", *codex_args]
@@ -209,15 +291,21 @@ def _run_role(
         },
         events_file,
     )
+    append_event(
+        run_id,
+        "role_finished",
+        stage,
+        {"role": role_name, "exit_code": exit_code, "duration_s": duration},
+    )
 
     return exec_result
 
 
-def _run_verify(run_id: str, stage: str, stage_config: dict, config: dict) -> bool:
-    """Run stage verification. Returns True if passed."""
+def _run_verify(run_id: str, stage: str, stage_config: dict, config: dict) -> dict:
+    """Run stage verification. Returns command result details."""
     verify_cmd = stage_config.get("verify", "")
     if not verify_cmd:
-        return True
+        return {"passed": True, "command": "", "output": ""}
 
     try:
         proc = subprocess.run(  # noqa: S602
@@ -228,9 +316,126 @@ def _run_verify(run_id: str, stage: str, stage_config: dict, config: dict) -> bo
             cwd=str(Path.cwd()),
             timeout=120,
         )
-        return proc.returncode == 0
+        output = "\n".join(part for part in [proc.stdout, proc.stderr] if part)
+        return {
+            "passed": proc.returncode == 0,
+            "command": verify_cmd,
+            "output": output,
+            "exit_code": proc.returncode,
+        }
     except (subprocess.TimeoutExpired, OSError):
-        return False
+        return {"passed": False, "command": verify_cmd, "output": "verify command failed to run"}
+
+
+def _final_verify_commands(config: dict) -> tuple[list[str], str, int]:
+    """Return final verify commands and policy."""
+    commands = config.get("final_verify")
+    policy = config.get("final_verify_policy", "block")
+    max_retries = int(config.get("final_verify_max_retries", 1) or 0)
+    if isinstance(commands, str):
+        commands = [commands]
+    if commands:
+        return list(commands), policy, max_retries
+
+    detected = detect_verify_command(str(Path.cwd()))
+    if detected:
+        return [detected], policy, max_retries
+    return [], "unverified", max_retries
+
+
+def _run_final_verify(run_id: str, config: dict, events_file: Path) -> bool:
+    """Run final verification commands. Returns True when the run may complete."""
+    commands, policy, max_retries = _final_verify_commands(config)
+    if not commands:
+        state = _load_state(run_id)
+        state["final_verify_policy"] = policy
+        state["final_verify_results"] = []
+        _save_state(run_id, state)
+        return True
+
+    results: list[dict] = []
+    all_passed = True
+    for command in commands:
+        command_passed = False
+        for attempt in range(1, max_retries + 2):
+            event = {
+                "type": "final_verify_started",
+                "run_id": run_id,
+                "command": command,
+                "attempt": attempt,
+                "ts": _now_iso(),
+            }
+            _emit_event(event, events_file)
+            append_event(
+                run_id,
+                "final_verify_started",
+                None,
+                {"command": command, "attempt": attempt},
+            )
+
+            try:
+                proc = subprocess.run(  # noqa: S602
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(Path.cwd()),
+                    timeout=120,
+                )
+                passed = proc.returncode == 0
+                output = "\n".join(part for part in [proc.stdout, proc.stderr] if part)
+                exit_code = proc.returncode
+            except (subprocess.TimeoutExpired, OSError):
+                passed = False
+                output = "final verify command failed to run"
+                exit_code = -1
+
+            result = {
+                "command": command,
+                "attempt": attempt,
+                "passed": passed,
+                "exit_code": exit_code,
+                "output": output,
+            }
+            results.append(result)
+
+            result_text = "pass" if passed else "fail"
+            _emit_event(
+                {
+                    "type": "final_verify_finished",
+                    "run_id": run_id,
+                    "command": command,
+                    "attempt": attempt,
+                    "result": result_text,
+                    "ts": _now_iso(),
+                },
+                events_file,
+            )
+            append_event(
+                run_id,
+                "final_verify_finished",
+                None,
+                {
+                    "command": command,
+                    "attempt": attempt,
+                    "result": result_text,
+                    "exit_code": exit_code,
+                },
+            )
+
+            if passed:
+                command_passed = True
+                break
+
+        all_passed = all_passed and command_passed
+
+    state = _load_state(run_id)
+    state["final_verify_policy"] = policy
+    state["final_verify_results"] = results
+    state["final_verify_passed"] = all_passed
+    _save_state(run_id, state)
+
+    return all_passed or policy == "warn"
 
 
 def cmd_run(args, config: dict) -> None:
@@ -287,6 +492,41 @@ def cmd_run(args, config: dict) -> None:
             if status in ("completed", "skipped"):
                 continue
 
+            if status == "gated":
+                gate = stage_state.get("gate", "human")
+                if auto_approve:
+                    _record_gate(run_id, stage_name, gate, "approved")
+                    transition(run_id, stage_name, "completed")
+                    append_event(run_id, "stage_completed", stage_name, {"result": "passed"})
+                    _emit_event(
+                        {
+                            "type": "gate_auto_approved",
+                            "stage": stage_name,
+                            "gate": gate,
+                            "note": "auto-approved by --auto-approve-gates flag on resume",
+                            "ts": _now_iso(),
+                        },
+                        events_file,
+                    )
+                    continue
+
+                run_status = "blocked"
+                print(
+                    json.dumps(
+                        {
+                            "error": (
+                                f"Human gate at stage '{stage_name}'. "
+                                "Rerun with --auto-approve-gates for autonomous mode, "
+                                "or use the interactive $ateam:run skill."
+                            ),
+                            "run_id": run_id,
+                            "stage": stage_name,
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                break
+
             stage_config = stage_state  # v2.4+ snapshots full config
 
             _emit_event(
@@ -299,49 +539,213 @@ def cmd_run(args, config: dict) -> None:
                 events_file,
             )
 
-            # Transition to dispatched
-            transition(run_id, stage_name, "dispatched")
-            append_event(
-                run_id,
-                "stage_dispatched",
-                stage_name,
-                {"roles": stage_config.get("roles", []), "isolation": "runner"},
-            )
-
-            # Dispatch each role
-            for role_name in stage_config.get("roles", []):
-                _run_role(
-                    run_id,
-                    stage_name,
-                    role_name,
-                    config,
-                    codex_bin,
-                    codex_args,
-                    output_dir,
-                    events_file,
-                )
-
-            # Verify
+            max_retries = int(stage_config.get("max_retries") or 0)
             verify_cmd = stage_config.get("verify", "")
-            if verify_cmd:
-                transition(run_id, stage_name, "verifying")
-                passed = _run_verify(run_id, stage_name, stage_config, config)
+            attempt = 0
+            stage_passed = status == "passed"
+            rework_used = False
+            dispatch_roles = status not in ("verifying", "passed")
 
-                _emit_event(
-                    {
-                        "type": "verify_finished",
-                        "stage": stage_name,
-                        "result": "pass" if passed else "fail",
-                        "ts": _now_iso(),
-                    },
-                    events_file,
+            if status == "pending":
+                transition(run_id, stage_name, "dispatched")
+                append_event(
+                    run_id,
+                    "stage_dispatched",
+                    stage_name,
+                    {"roles": stage_config.get("roles", []), "isolation": "runner"},
                 )
+            elif status in ("failed", "rework", "rejected"):
+                transition(run_id, stage_name, "dispatched")
+            elif status not in ("dispatched", "verifying", "passed"):
+                print(
+                    json.dumps(
+                        {
+                            "error": f"Cannot resume stage '{stage_name}' from status '{status}'",
+                            "run_id": run_id,
+                            "stage": stage_name,
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                run_status = "failed"
+                break
 
-                if passed:
-                    transition(run_id, stage_name, "passed")
-                else:
+            while True:
+                if stage_passed:
+                    break
+
+                attempt += 1
+                role_failure = None
+
+                # Dispatch each role
+                if dispatch_roles:
+                    for role_name in stage_config.get("roles", []):
+                        result = _run_role(
+                            run_id,
+                            stage_name,
+                            role_name,
+                            config,
+                            codex_bin,
+                            codex_args,
+                            output_dir,
+                            events_file,
+                        )
+                        if result.get("exit_code") != 0:
+                            role_failure = result
+                            break
+
+                if role_failure:
                     transition(run_id, stage_name, "failed")
-                    # TODO: retry / rework logic for v3.3.1
+                    run_status = "failed"
+                    append_event(
+                        run_id,
+                        "stage_completed",
+                        stage_name,
+                        {
+                            "result": "failed",
+                            "reason": "role failed",
+                            "role": role_failure.get("role"),
+                            "exit_code": role_failure.get("exit_code"),
+                        },
+                    )
+                    _emit_event(
+                        {
+                            "type": "stage_finished",
+                            "stage": stage_name,
+                            "result": "failed",
+                            "reason": "role failed",
+                            "role": role_failure.get("role"),
+                            "exit_code": role_failure.get("exit_code"),
+                            "ts": _now_iso(),
+                        },
+                        events_file,
+                    )
+                    break
+
+                if verify_cmd:
+                    current_stage_status = (
+                        _load_state(run_id)
+                        .get("stages", {})
+                        .get(stage_name, {})
+                        .get("status", "pending")
+                    )
+                    if current_stage_status != "verifying":
+                        transition(run_id, stage_name, "verifying")
+                    verify_result = _run_verify(run_id, stage_name, stage_config, config)
+                    passed = bool(verify_result.get("passed"))
+                    attempt_num = _record_verify_attempt(
+                        run_id,
+                        stage_name,
+                        "pass" if passed else "fail",
+                        verify_result.get("command", verify_cmd),
+                        verify_result.get("output", ""),
+                    )
+
+                    _emit_event(
+                        {
+                            "type": "verify_finished",
+                            "stage": stage_name,
+                            "result": "pass" if passed else "fail",
+                            "attempt": attempt_num,
+                            "ts": _now_iso(),
+                        },
+                        events_file,
+                    )
+
+                    if passed:
+                        transition(run_id, stage_name, "passed")
+                        stage_passed = True
+                        break
+
+                    transition(run_id, stage_name, "failed")
+                    if attempt <= max_retries:
+                        append_event(
+                            run_id,
+                            "runner_retry",
+                            stage_name,
+                            {"attempt": attempt + 1, "max_retries": max_retries},
+                        )
+                        _emit_event(
+                            {
+                                "type": "runner_retry",
+                                "stage": stage_name,
+                                "attempt": attempt + 1,
+                                "max_retries": max_retries,
+                                "ts": _now_iso(),
+                            },
+                            events_file,
+                        )
+                        transition(run_id, stage_name, "dispatched")
+                        dispatch_roles = True
+                        continue
+
+                    rework_to = stage_config.get("rework_to")
+                    if rework_to and not rework_used:
+                        rework_config = stages_map.get(rework_to, {})
+                        rework_used = True
+                        append_event(
+                            run_id,
+                            "runner_rework",
+                            stage_name,
+                            {"rework_to": rework_to, "roles": rework_config.get("roles", [])},
+                        )
+                        _emit_event(
+                            {
+                                "type": "runner_rework",
+                                "stage": stage_name,
+                                "rework_to": rework_to,
+                                "roles": rework_config.get("roles", []),
+                                "ts": _now_iso(),
+                            },
+                            events_file,
+                        )
+                        transition(run_id, stage_name, "rework")
+                        rework_failure = None
+                        for role_name in rework_config.get("roles", []):
+                            result = _run_role(
+                                run_id,
+                                rework_to,
+                                role_name,
+                                config,
+                                codex_bin,
+                                codex_args,
+                                output_dir,
+                                events_file,
+                            )
+                            if result.get("exit_code") != 0:
+                                rework_failure = result
+                                break
+                        transition(run_id, stage_name, "dispatched")
+                        if rework_failure:
+                            transition(run_id, stage_name, "failed")
+                            run_status = "failed"
+                            append_event(
+                                run_id,
+                                "stage_completed",
+                                stage_name,
+                                {
+                                    "result": "failed",
+                                    "reason": "rework role failed",
+                                    "role": rework_failure.get("role"),
+                                    "exit_code": rework_failure.get("exit_code"),
+                                },
+                            )
+                            _emit_event(
+                                {
+                                    "type": "stage_finished",
+                                    "stage": stage_name,
+                                    "result": "failed",
+                                    "reason": "rework role failed",
+                                    "role": rework_failure.get("role"),
+                                    "exit_code": rework_failure.get("exit_code"),
+                                    "ts": _now_iso(),
+                                },
+                                events_file,
+                            )
+                            break
+                        dispatch_roles = False
+                        continue
+
                     run_status = "failed"
                     append_event(
                         run_id,
@@ -349,21 +753,43 @@ def cmd_run(args, config: dict) -> None:
                         stage_name,
                         {"result": "failed", "reason": "verify failed"},
                     )
+                    _emit_event(
+                        {
+                            "type": "stage_finished",
+                            "stage": stage_name,
+                            "result": "failed",
+                            "reason": "verify failed",
+                            "ts": _now_iso(),
+                        },
+                        events_file,
+                    )
                     break
-            else:
+
                 # No verify — go to passed
                 transition(run_id, stage_name, "passed")
+                stage_passed = True
+                break
+
+            if not stage_passed:
+                break
 
             # Gate check
             gate = stage_config.get("gate", "auto")
             if gate == "auto":
+                _record_gate(run_id, stage_name, gate, "approved")
                 transition(run_id, stage_name, "completed")
                 _emit_event(
-                    {"type": "gate_auto_approved", "stage": stage_name, "ts": _now_iso()},
+                    {
+                        "type": "gate_auto_approved",
+                        "stage": stage_name,
+                        "gate": gate,
+                        "ts": _now_iso(),
+                    },
                     events_file,
                 )
             elif gate in ("human", "reviewer", "qa"):
                 if auto_approve:
+                    _record_gate(run_id, stage_name, gate, "approved")
                     transition(run_id, stage_name, "completed")
                     _emit_event(
                         {
@@ -376,6 +802,7 @@ def cmd_run(args, config: dict) -> None:
                         events_file,
                     )
                 else:
+                    _record_gate(run_id, stage_name, gate, "blocked")
                     transition(run_id, stage_name, "gated")
                     _emit_event(
                         {
@@ -403,6 +830,7 @@ def cmd_run(args, config: dict) -> None:
                     )
                     break
             else:
+                _record_gate(run_id, stage_name, gate, "approved")
                 transition(run_id, stage_name, "completed")
 
             append_event(run_id, "stage_completed", stage_name, {"result": "passed"})
@@ -420,12 +848,16 @@ def cmd_run(args, config: dict) -> None:
     except KeyboardInterrupt:
         run_status = "stopped"
 
+    if run_status == "completed":
+        final_verify_ok = _run_final_verify(run_id, config, events_file)
+        if not final_verify_ok:
+            run_status = "failed"
+
+    _set_run_status(run_id, run_status)
+
     # Completion — persist history on BOTH success and failure
     try:
-        import argparse
-
-        history_args = argparse.Namespace(run_id=run_id)
-        cmd_history_append(history_args)
+        _persist_history(run_id)
     except Exception:  # noqa: S110
         pass  # Best-effort history persistence
 

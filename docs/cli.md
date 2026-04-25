@@ -21,6 +21,8 @@ These are the primary commands for Codex App and Codex CLI users:
 
 The runtime CLI (`agenteam-rt`) is the underlying engine. Skills call it internally, but you can use it directly for automation or debugging.
 
+Most runtime commands are JSON planning and policy primitives: they resolve config, update state, record gates, or describe what should happen next. `agenteam-rt run` is the exception: it is the local executor facade. It composes those primitives, builds prompts, invokes `codex exec`, writes `.agenteam/runs/<run-id>/` artifacts, and streams JSONL runner events.
+
 ### Config & Validation
 
 ```bash
@@ -78,11 +80,13 @@ agenteam-rt final-verify-plan --run-id <id>
 # Build the fully composed prompt for a role dispatch (for codex exec / harnesses)
 agenteam-rt prompt-build --run-id <id> --stage implement --role dev
 
-# Run the full pipeline non-interactively via codex exec
+# Run the full pipeline non-interactively via the local executor facade
 agenteam-rt run --task "add user auth" --auto-approve-gates
 agenteam-rt run --task-file seed.md --profile standard --output-dir ./out
 agenteam-rt run --run-id <id>  # resume an existing run
 ```
+
+`agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed.
 
 ### Governed Delivery Foundations
 
@@ -185,4 +189,4 @@ agenteam-rt hotl-skills --run-id <id> --stage implement --role dev
 
 ## Output Format
 
-All runtime commands output JSON to stdout. Errors go to stderr as JSON. Exit code 0 = success, 1 = error.
+All runtime commands output JSON to stdout. Errors go to stderr as JSON. Exit code 0 = success, 1 = error. For `agenteam-rt run`, stdout is a JSONL event stream rather than a single JSON object.

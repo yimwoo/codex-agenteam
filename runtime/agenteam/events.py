@@ -13,6 +13,12 @@ EVENT_TYPES: dict[str, list[str]] = {
     "stage_gated": ["gate_type", "result"],
     "stage_completed": ["result"],
     "stage_resumed": ["verify_result", "action"],
+    "role_started": ["role"],
+    "role_finished": ["role", "exit_code"],
+    "runner_retry": ["attempt", "max_retries"],
+    "runner_rework": ["rework_to"],
+    "final_verify_started": ["command", "attempt"],
+    "final_verify_finished": ["command", "attempt", "result"],
     "run_finished": ["status"],
 }
 
@@ -23,6 +29,10 @@ _STAGE_EVENTS = {
     "stage_gated",
     "stage_completed",
     "stage_resumed",
+    "role_started",
+    "role_finished",
+    "runner_retry",
+    "runner_rework",
 }
 
 
