@@ -35,6 +35,7 @@ from .resume import cmd_resume_detect, cmd_resume_plan
 from .runner import cmd_run
 from .standup import cmd_standup
 from .state import cmd_init, cmd_stage_baseline, cmd_status, set_stage_field, validate_run_id
+from .trace import cmd_trace
 from .transitions import cmd_transition
 from .validate import cmd_validate
 from .verify import cmd_final_verify_plan, cmd_record_gate, cmd_record_verify, cmd_verify_plan
@@ -106,6 +107,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Compact progress view",
+    )
+
+    # trace
+    p_trace = sub.add_parser("trace", help="Show diagnostic run trace")
+    p_trace.add_argument("--run-id", dest="run_id", required=True)
+    p_trace.add_argument(
+        "--stale-threshold-minutes",
+        dest="stale_threshold_minutes",
+        type=int,
+        default=60,
+        help="Minutes before an active run is considered stale",
     )
 
     # policy
@@ -447,6 +459,8 @@ def main() -> None:
         cmd_scope_audit(args, config)
     elif args.command == "status":
         cmd_status(args, config)
+    elif args.command == "trace":
+        cmd_trace(args, config)
     elif args.command == "policy":
         if args.policy_cmd == "check":
             cmd_policy_check(args, config)

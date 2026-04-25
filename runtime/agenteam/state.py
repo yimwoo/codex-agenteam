@@ -480,67 +480,12 @@ def _format_elapsed(start_iso: str, end_iso: str | None = None) -> str:
         return ""
 
 
-def _build_progress_view(state: dict, run_id: str) -> dict:
+def _build_progress_view(state: dict, run_id: str, config: dict) -> dict:
     """Build a compact progress view from state + last event."""
-    from .events import list_events
+    from .trace import build_progress_from_trace, build_trace
 
-    # Run-level elapsed
-    started_at = state.get("started_at", "")
-    elapsed = _format_elapsed(started_at) if started_at else ""
-
-    # Stage summaries
-    stage_order = state.get("stage_order", list(state.get("stages", {}).keys()))
-    stages_map = state.get("stages", {})
-    stages_list = []
-    for name in stage_order:
-        s = stages_map.get(name, {})
-        entry: dict = {"name": name, "status": s.get("status", "pending")}
-        s_started = s.get("started_at")
-        s_completed = s.get("completed_at")
-        if s_started:
-            entry["elapsed"] = _format_elapsed(s_started, s_completed)
-        stages_list.append(entry)
-
-    # Current stage details
-    current_name = state.get("current_stage")
-    current_stage = None
-    if current_name and current_name in stages_map:
-        cs = stages_map[current_name]
-        current_stage = {
-            "name": current_name,
-            "status": cs.get("status", "pending"),
-        }
-        cs_started = cs.get("started_at")
-        if cs_started:
-            current_stage["elapsed"] = _format_elapsed(cs_started, cs.get("completed_at"))
-        verify_attempts = cs.get("verify_attempts", [])
-        if verify_attempts:
-            current_stage["verify_attempt"] = len(verify_attempts)
-        max_retries = cs.get("max_retries", 0)
-        if max_retries:
-            current_stage["max_retries"] = max_retries
-
-    # Last event
-    last_event = None
-    events = list_events(run_id, last_n=1)
-    if events:
-        last_event = events[0]
-
-    result = {
-        "run_id": run_id,
-        "task": state.get("task", ""),
-        "profile": state.get("profile"),
-        "status": state.get("status", "unknown"),
-        "elapsed": elapsed,
-        "current_stage": current_stage,
-        "stages": stages_list,
-        "active_lock": state.get("write_locks", {}).get("active"),
-        "last_event": last_event,
-    }
-    governance = state.get("governance")
-    if isinstance(governance, dict):
-        result["governance"] = governance
-    return result
+    trace = build_trace(run_id, config)
+    return build_progress_from_trace(trace)
 
 
 def cmd_status(args, config: dict) -> None:
@@ -573,7 +518,7 @@ def cmd_status(args, config: dict) -> None:
 
     if getattr(args, "progress", False):
         run_id = state.get("run_id", getattr(args, "run_id", ""))
-        progress = _build_progress_view(state, run_id)
+        progress = _build_progress_view(state, run_id, config)
         print(json.dumps(progress, indent=2))
     else:
         result = dict(state)
