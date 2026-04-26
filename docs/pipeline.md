@@ -129,6 +129,22 @@ final verification results, known runner artifacts, and a suggested next
 action. `status --progress` uses the same trace data but keeps only the compact
 progress fields.
 
+## Run Evidence
+
+Use `evidence` when a run needs a portable review record for CI repair,
+release review, benchmark conversion, or future workspace-agent export:
+
+```bash
+agenteam-rt evidence --run-id <id>
+agenteam-rt evidence --run-id <id> --output .agenteam/evidence/<id>.json
+```
+
+Evidence is a versioned JSON projection over trace and event summaries. It
+includes run outcome, stage metrics, role exits, verification and gate
+summaries, final verification, governance metadata when present, and artifact
+paths. It references detailed runner artifacts by path instead of embedding raw
+stdout, stderr, or prompts.
+
 ## Final Verification
 
 After all stages complete, optional final verification runs:

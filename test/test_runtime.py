@@ -7789,3 +7789,283 @@ raise SystemExit(1 if count == 0 else 0)
 
         assert result.returncode != 0
         assert "Run missing-run not found" in result.stderr
+
+    def test_evidence_reports_completed_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence complete",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode == 0, run.stderr
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        assert result.returncode == 0, result.stderr
+        evidence = json.loads(result.stdout)
+        assert evidence["schema_version"] == "1"
+        assert evidence["kind"] == "agenteam.run_evidence"
+        assert evidence["run"]["status"] == "completed"
+        assert evidence["run"]["pipeline_mode"] == "standalone"
+        assert evidence["outcome"]["result"] == "completed"
+        assert evidence["outcome"]["determined_by"] == "run"
+        assert evidence["outcome"]["reason"] == "run completed"
+        assert evidence["metrics"]["completed_stage_count"] == 1
+        assert evidence["metrics"]["role_attempt_count"] == 1
+        assert evidence["metrics"]["role_failure_count"] == 0
+        assert evidence["outcome"]["next_action"]["kind"] == "none"
+        assert evidence["final_verify"]["configured"] is False
+        assert evidence["final_verify"]["attempts"] == 0
+        assert "governance" not in evidence
+        assert any(
+            path.endswith("/implement/dev/exec.json") for path in evidence["artifacts"]["paths"]
+        )
+
+    def test_evidence_reports_role_failure_for_ci_and_release_review(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence role failure",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, exit_codes="8"),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        assert evidence["run"]["status"] == "failed"
+        assert evidence["outcome"]["determined_by"] == "stage"
+        assert evidence["outcome"]["stage"] == "implement"
+        assert evidence["outcome"]["reason"] == "role failed"
+        assert evidence["outcome"]["role"] == "dev"
+        assert evidence["outcome"]["exit_code"] == 8
+        assert evidence["metrics"]["role_failure_count"] == 1
+        assert evidence["role_exits"][0]["stage"] == "implement"
+        assert evidence["role_exits"][0]["role"] == "dev"
+        assert evidence["role_exits"][0]["exit_code"] == 8
+        assert evidence["stages"][0]["failure"]["reason"] == "role failed"
+
+    def test_evidence_reports_gated_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "review", "roles": ["reviewer"], "gate": "reviewer"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence gate",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        assert evidence["run"]["status"] == "blocked"
+        assert evidence["outcome"]["determined_by"] == "stage"
+        assert evidence["outcome"]["reason"] == "gate blocked"
+        assert evidence["metrics"]["gate_block_count"] == 1
+        assert evidence["stages"][0]["gate"]["result"] == "blocked"
+        assert evidence["outcome"]["next_action"]["kind"] == "approve_gate"
+
+    def test_evidence_reports_stale_run(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt("init", "--task", "evidence stale", cwd=str(tmp_path))
+        assert init.returncode == 0
+        run_id = self._update_single_run_state(
+            tmp_path,
+            lambda state: (
+                state.update({"status": "stopped", "last_update": "2020-01-01T00:00:00Z"}),
+                state["stages"]["implement"].update({"status": "dispatched"}),
+            ),
+        )
+        events_path = tmp_path / ".agenteam" / "events" / f"{run_id}.jsonl"
+        events = [json.loads(line) for line in events_path.read_text().splitlines()]
+        for event in events:
+            event["ts"] = "2020-01-01T00:00:00Z"
+        events_path.write_text("\n".join(json.dumps(event) for event in events) + "\n")
+
+        result = run_rt("evidence", "--run-id", run_id, cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        assert evidence["stale"]["is_stale"] is True
+        assert evidence["outcome"]["reason"] == "run stale"
+        assert evidence["outcome"]["next_action"]["kind"] == "resume"
+
+    def test_evidence_includes_governance_metadata_when_present(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        init = run_rt(
+            "init",
+            "--task",
+            "evidence governed",
+            "--initiative",
+            "billing-platform",
+            "--phase",
+            "implementation",
+            "--checkpoint",
+            "review",
+            "--burn-estimate",
+            "16",
+            cwd=str(tmp_path),
+        )
+        assert init.returncode == 0, init.stderr
+        run_id = json.loads(init.stdout)["run_id"]
+
+        result = run_rt("evidence", "--run-id", run_id, cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        assert evidence["governance"] == {
+            "initiative": "billing-platform",
+            "phase": "implementation",
+            "checkpoint": "review",
+            "burn_estimate": 16.0,
+        }
+
+    def test_evidence_reports_final_verify_failure(self, tmp_path):
+        final_verify = tmp_path / "final_verify.py"
+        final_verify.write_text("raise SystemExit(5)\n")
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={
+                "final_verify": [f"{sys.executable} {final_verify}"],
+                "final_verify_policy": "block",
+                "final_verify_max_retries": 0,
+            },
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence final verify",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        assert evidence["run"]["status"] == "failed"
+        assert evidence["outcome"]["determined_by"] == "final_verify"
+        assert evidence["outcome"]["reason"] == "final verification failed"
+        assert evidence["final_verify"]["passed"] is False
+        assert evidence["final_verify"]["last_result"]["exit_code"] == 5
+
+    def test_evidence_reports_rework_for_benchmark_prep(self, tmp_path):
+        verify_script = tmp_path / "verify_after_rework.py"
+        verify_count = tmp_path / "verify-rework-count.txt"
+        verify_script.write_text(
+            f"""from pathlib import Path
+path = Path({str(verify_count)!r})
+try:
+    count = int(path.read_text())
+except FileNotFoundError:
+    count = 0
+path.write_text(str(count + 1))
+raise SystemExit(1 if count == 0 else 0)
+"""
+        )
+        self._write_runner_config(
+            tmp_path,
+            [
+                {"name": "implement", "roles": ["dev"], "gate": "auto"},
+                {
+                    "name": "test",
+                    "roles": ["qa"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 0,
+                    "rework_to": "implement",
+                },
+            ],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence rework",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode == 0, run.stderr
+        state = self._state_for_single_run(tmp_path)
+
+        result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+
+        evidence = json.loads(result.stdout)
+        stages = {stage["name"]: stage for stage in evidence["stages"]}
+        assert evidence["metrics"]["rework_count"] == 1
+        assert evidence["metrics"]["role_attempt_count"] == 3
+        assert evidence["metrics"]["verify_attempt_count"] == 2
+        assert stages["test"]["rework_to"] == "implement"
+        assert stages["test"]["verify"]["attempts"] == 2
+
+    def test_evidence_output_writes_same_json_as_stdout(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        run = run_rt(
+            "run",
+            "--task",
+            "evidence markdown",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+        assert run.returncode == 0, run.stderr
+        state = self._state_for_single_run(tmp_path)
+        output = tmp_path / "reports" / "evidence.json"
+
+        result = run_rt(
+            "evidence",
+            "--run-id",
+            state["run_id"],
+            "--output",
+            str(output),
+            cwd=str(tmp_path),
+        )
+
+        assert result.returncode == 0, result.stderr
+        stdout_payload = json.loads(result.stdout)
+        file_payload = json.loads(output.read_text())
+        assert stdout_payload["generated_at"]
+        assert file_payload == stdout_payload
+        assert file_payload["run"]["run_id"] == state["run_id"]
