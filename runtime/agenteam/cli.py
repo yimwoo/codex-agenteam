@@ -17,6 +17,7 @@ from .dispatch import (
     cmd_scope_audit,
 )
 from .events import cmd_event_append, cmd_event_list, cmd_event_tail
+from .evidence import cmd_evidence
 from .gates import cmd_gate_eval
 from .generate import cmd_generate
 from .governance import (
@@ -113,6 +114,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_trace = sub.add_parser("trace", help="Show diagnostic run trace")
     p_trace.add_argument("--run-id", dest="run_id", required=True)
     p_trace.add_argument(
+        "--stale-threshold-minutes",
+        dest="stale_threshold_minutes",
+        type=int,
+        default=60,
+        help="Minutes before an active run is considered stale",
+    )
+
+    # evidence
+    p_evidence = sub.add_parser("evidence", help="Build portable run evidence")
+    p_evidence.add_argument("--run-id", dest="run_id", required=True)
+    p_evidence.add_argument("--output", default=None, help="Write evidence to a file")
+    p_evidence.add_argument(
         "--stale-threshold-minutes",
         dest="stale_threshold_minutes",
         type=int,
@@ -461,6 +474,8 @@ def main() -> None:
         cmd_status(args, config)
     elif args.command == "trace":
         cmd_trace(args, config)
+    elif args.command == "evidence":
+        cmd_evidence(args, config)
     elif args.command == "policy":
         if args.policy_cmd == "check":
             cmd_policy_check(args, config)

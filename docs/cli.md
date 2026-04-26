@@ -72,6 +72,10 @@ agenteam-rt status <run-id>
 agenteam-rt trace --run-id <id>
 agenteam-rt trace --run-id <id> --stale-threshold-minutes 30
 
+# Build portable run evidence for CI repair, release review, and benchmarks
+agenteam-rt evidence --run-id <id>
+agenteam-rt evidence --run-id <id> --output .agenteam/evidence/<id>.json
+
 # Get verification plan for a stage
 agenteam-rt verify-plan implement --run-id <id>
 

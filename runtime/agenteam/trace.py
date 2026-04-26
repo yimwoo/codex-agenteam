@@ -351,6 +351,7 @@ def build_trace(run_id: str, config: dict, stale_threshold_minutes: int = 60) ->
     trace = {
         "run_id": run_id,
         "task": state.get("task", ""),
+        "pipeline_mode": state.get("pipeline_mode"),
         "profile": state.get("profile"),
         "status": state.get("status", "unknown"),
         "health": _health(state, stale),
