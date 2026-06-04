@@ -7,6 +7,8 @@ import toml
 
 from .roles import resolve_roles
 
+AGENT_SURFACE_FIELDS = ("nickname_candidates", "mcp_servers")
+
 
 def build_developer_instructions(role: dict) -> str:
     """Build the developer_instructions string from a resolved role.
@@ -59,6 +61,15 @@ def generate_agent_toml(role: dict) -> str:
         agent["model_reasoning_effort"] = role["reasoning_effort"]
     if "sandbox_mode" in role:
         agent["sandbox_mode"] = role["sandbox_mode"]
+
+    for field in AGENT_SURFACE_FIELDS:
+        if field in role:
+            agent[field] = role[field]
+
+    if "skills_config" in role:
+        agent["skills"] = {"config": role["skills_config"]}
+    elif "skills" in role:
+        agent["skills"] = role["skills"]
 
     agent["developer_instructions"] = build_developer_instructions(role)
 

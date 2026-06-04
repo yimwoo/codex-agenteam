@@ -8,6 +8,11 @@ roles, stages, gates, verification, and state. The non-interactive
 the same run state, builds role prompts, invokes `codex exec`, records durable
 events, and writes `.agenteam/runs/<run-id>/` artifacts.
 
+By default, the runner invokes role workers with
+`codex exec --json --sandbox workspace-write`. This replaces the older
+deprecated `--full-auto` compatibility flag with an explicit sandbox boundary.
+If a run needs a different Codex sandbox, pass it through `--codex-args`.
+
 ## Stages
 
 | Stage | Role(s) | Output | Gate |

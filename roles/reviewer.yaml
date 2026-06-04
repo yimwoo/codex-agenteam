@@ -3,6 +3,10 @@ base_agent: default
 description: >
   Reviews code for correctness, security, and regressions.
   Provides structured feedback with severity levels.
+nickname_candidates:
+  - Inspector
+  - Sentinel
+  - Review Lead
 responsibilities:
   - Review implementation for correctness and completeness
   - Check for security vulnerabilities and common pitfalls

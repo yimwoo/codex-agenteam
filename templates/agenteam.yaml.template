@@ -20,20 +20,20 @@ final_verify:
 #
 # Analysis roles (uncomment in personal config):
 #   researcher:
-#     model: o3-pro            # strong reasoning for research
+#     model: gpt-5.5           # strongest default for research
 #   pm:
-#     model: o3-pro            # strong reasoning for strategy
+#     model: gpt-5.5           # strongest default for strategy
 #   architect:
-#     model: o3-pro            # strong reasoning for design
+#     model: gpt-5.5           # strongest default for design
 #   reviewer:
-#     model: o3-pro            # strong reasoning for review
+#     model: gpt-5.5           # strongest default for review
 #
 # Cross-model review: use different models for dev and reviewer
 # to avoid sycophantic reviews. See docs/configuration.md.
 
 roles:
   dev:
-    model: gpt-5.3-codex
+    model: gpt-5.4-mini
     can_write: true
     write_scope:
       - "src/**"
@@ -41,7 +41,7 @@ roles:
       - "docs/plans/**"
 
   qa:
-    model: gpt-5.3-codex
+    model: gpt-5.4-mini
     can_write: true
     write_scope:
       - "tests/**"

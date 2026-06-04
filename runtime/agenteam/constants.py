@@ -35,7 +35,14 @@ KNOWN_TOP_LEVEL_KEYS = {
 }
 
 # Two-layer config: personal override allowlist (role-level fields)
-PERSONAL_OVERRIDE_ALLOWLIST = {"model", "reasoning_effort", "system_instructions"}
+PERSONAL_OVERRIDE_ALLOWLIST = {
+    "model",
+    "reasoning_effort",
+    "system_instructions",
+    "nickname_candidates",
+    "mcp_servers",
+    "skills_config",
+}
 
 # Role-level fields that are NEVER personally overridable
 NON_OVERRIDABLE_ROLE_FIELDS = {"write_scope", "can_write"}
