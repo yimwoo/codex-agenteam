@@ -136,6 +136,23 @@ Model and tool availability can vary by user and workspace, so prefer putting
 model pins and private tool wiring in personal config unless the whole team has
 the same Codex setup.
 
+## Workspace-Agent Draft Export
+
+`agenteam-rt export workspace-agent` creates a local draft that maps AgenTeam's
+resolved roles, pipeline stages, approval points, governance evidence commands,
+and tool/skill metadata into a portable Codex/ChatGPT workspace-agent planning
+shape:
+
+```bash
+agenteam-rt export workspace-agent
+agenteam-rt export workspace-agent --format markdown \
+  --output docs/agenteam-workspace-agent.md
+```
+
+This export is deterministic and local-only. It is not a live Workspace Agents
+API import. Sensitive tool keys such as tokens, passwords, credentials,
+authorization headers, and API keys are redacted before output.
+
 ## Built-in Roles
 
 | Role | Participates In | Can Write | Write Scope | Parallel Safe |

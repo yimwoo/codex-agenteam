@@ -156,6 +156,21 @@ decision/escalation counts, recorded tripwire warn/block results, gate
 rejections, criteria overrides, and recent follow-up records for release review
 or audit handoff.
 
+## Workspace-Agent Draft Export
+
+Use `export workspace-agent` when a team wants to reuse AgenTeam's role and
+workflow model in first-party Codex or ChatGPT workspace-agent planning:
+
+```bash
+agenteam-rt export workspace-agent
+agenteam-rt export workspace-agent --format markdown \
+  --output docs/agenteam-workspace-agent.md
+```
+
+The export includes resolved roles, stages, approval points, final verification,
+governance evidence commands, and surface guidance. It is a draft artifact, not
+an API import, so review redacted tool and skill settings before sharing it.
+
 ## Final Verification
 
 After all stages complete, optional final verification runs:

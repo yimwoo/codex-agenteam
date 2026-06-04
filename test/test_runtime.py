@@ -450,6 +450,89 @@ class TestTomlGeneration:
 
 
 # ---------------------------------------------------------------------------
+# Workspace-agent export
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceAgentExport:
+    def test_workspace_agent_export_json_includes_roles_workflow_and_governance(self, tmp_path):
+        make_config(tmp_path)
+
+        result = run_rt("export", "workspace-agent", cwd=str(tmp_path))
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["schema_version"] == "1"
+        assert payload["kind"] == "agenteam.workspace_agent_export"
+        assert payload["target"] == "workspace-agent-draft"
+        assert payload["team"]["pipeline_mode"] == "standalone"
+        assert payload["team"]["isolation"] == "branch"
+        assert payload["team"]["role_count"] == 6
+        role_names = {role["name"] for role in payload["roles"]}
+        assert {"architect", "dev", "qa", "reviewer"}.issubset(role_names)
+        stages = {stage["name"]: stage for stage in payload["workflow"]["stages"]}
+        assert stages["implement"]["roles"] == ["dev"]
+        assert "approval_points" in payload["workflow"]
+        assert payload["governance"]["evidence_command"] == "agenteam-rt evidence --run-id <id>"
+        assert "workspace-agent" in payload["surface_guidance"]["chatgpt_workspace_agent"]
+
+    def test_workspace_agent_export_redacts_sensitive_tool_fields(self, tmp_path):
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "roles": {
+                "docs_reviewer": {
+                    "description": "Reviews docs.",
+                    "participates_in": ["review"],
+                    "can_write": False,
+                    "mcp_servers": {
+                        "docs": {
+                            "url": "https://developers.openai.com/mcp",
+                            "api_key": "secret-value",
+                            "headers": {"Authorization": "Bearer token"},
+                        }
+                    },
+                }
+            },
+            "pipeline": {"stages": [{"name": "review", "roles": ["docs_reviewer"]}]},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        result = run_rt("export", "workspace-agent", cwd=str(tmp_path))
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        role = next(role for role in payload["roles"] if role["name"] == "docs_reviewer")
+        server = role["mcp_servers"]["docs"]
+        assert server["url"] == "https://developers.openai.com/mcp"
+        assert server["api_key"] == "<redacted>"
+        assert server["headers"]["Authorization"] == "<redacted>"
+        assert "secret-value" not in result.stdout
+        assert "Bearer token" not in result.stdout
+
+    def test_workspace_agent_export_markdown_output_matches_stdout(self, tmp_path):
+        make_config(tmp_path)
+        output = tmp_path / "exports" / "workspace-agent.md"
+
+        result = run_rt(
+            "export",
+            "workspace-agent",
+            "--format",
+            "markdown",
+            "--output",
+            str(output),
+            cwd=str(tmp_path),
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == result.stdout
+        assert "# AgenTeam Workspace-Agent Draft" in result.stdout
+        assert "## Roles" in result.stdout
+        assert "## Governance Evidence" in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # Init & state
 # ---------------------------------------------------------------------------
 
