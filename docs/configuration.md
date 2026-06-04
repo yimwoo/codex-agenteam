@@ -343,6 +343,12 @@ These fields are optional and backward compatible. When present they are stored 
 They do not change pipeline behavior by themselves. Use them when you want
 extra context on larger initiatives, and ignore them for small tasks or POCs.
 
+Run-scoped governance activity is summarized under `governance.adoption` in
+`status`, `status --progress`, `standup`, `trace`, and `evidence` when any
+signals exist. The summary includes counts and recent records for decisions,
+escalations/open follow-ups, recorded tripwire checks, gate rejections, gate
+blocks, and criteria overrides.
+
 ## Governed Delivery Tripwires
 
 `agenteam-rt governed-bootstrap` creates a starter tripwire catalog at:
@@ -367,6 +373,14 @@ Evaluate them with:
 ```bash
 agenteam-rt tripwire check --path src/auth/login.py
 agenteam-rt tripwire check --artifact-type adr --decision-right schema-change
+```
+
+Record a tripwire result into a run so later status and evidence views can show
+it without reading raw governance files:
+
+```bash
+agenteam-rt tripwire check --run-id <id> --stage implement \
+  --path src/auth/login.py
 ```
 
 Tripwires are config-driven and opt-in. This is a minimal foundation for

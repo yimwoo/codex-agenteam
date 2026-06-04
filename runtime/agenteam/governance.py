@@ -25,6 +25,7 @@ HUMAN_DISPOSITIONS = {
     "needs-followup",
 }
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+OPEN_DECISION_OUTCOMES = {"escalated", "blocked", "rejected", "deferred"}
 
 
 def _ensure_parent(path: Path) -> None:
@@ -58,6 +59,10 @@ def _decision_log_markdown_path(args=None) -> Path:
 
 def _tripwires_config_path(args=None) -> Path:
     return _governance_root(args) / "tripwires.yaml"
+
+
+def _state_path(run_id: str, args=None) -> Path:
+    return _project_root(args) / ".agenteam" / "state" / f"{run_id}.json"
 
 
 def _write_if_missing(path: Path, content: str) -> bool:
@@ -169,8 +174,7 @@ agenteam-rt decision render-log
     )
 
 
-def _read_decisions(args=None) -> list[dict]:
-    path = _decisions_jsonl_path(args)
+def _read_decisions_from_path(path: Path) -> list[dict]:
     if not path.exists():
         return []
 
@@ -187,8 +191,11 @@ def _read_decisions(args=None) -> list[dict]:
     return rows
 
 
-def _load_tripwires(args=None) -> list[dict]:
-    path = _tripwires_config_path(args)
+def _read_decisions(args=None) -> list[dict]:
+    return _read_decisions_from_path(_decisions_jsonl_path(args))
+
+
+def _load_tripwires_from_path(path: Path) -> list[dict]:
     if not path.exists():
         return []
 
@@ -233,6 +240,10 @@ def _load_tripwires(args=None) -> list[dict]:
     return normalized
 
 
+def _load_tripwires(args=None) -> list[dict]:
+    return _load_tripwires_from_path(_tripwires_config_path(args))
+
+
 def _tripwire_matches(
     tripwire: dict, paths: list[str], artifact_type: str | None, decision_right: str | None
 ) -> bool:
@@ -250,6 +261,245 @@ def _tripwire_matches(
         return False
 
     return True
+
+
+def _load_state_for_governance(run_id: str, args=None) -> tuple[Path, dict]:
+    if not _RUN_ID_RE.match(run_id):
+        raise ValueError(
+            f"Invalid --run-id '{run_id}'. "
+            "Must contain only alphanumeric characters, hyphens, and underscores."
+        )
+    path = _state_path(run_id, args)
+    if not path.exists():
+        raise FileNotFoundError(f"Run {run_id} not found")
+    with open(path) as f:
+        return path, json.load(f)
+
+
+def _compact_decision(row: dict) -> dict:
+    fields = (
+        "id",
+        "ts",
+        "outcome",
+        "summary",
+        "role",
+        "stage",
+        "artifact_type",
+        "artifact_ref",
+        "decision_right",
+        "tripwire_id",
+        "human_disposition",
+    )
+    return {field: row[field] for field in fields if row.get(field) not in (None, "")}
+
+
+def _compact_tripwire_check(row: dict) -> dict:
+    fields = (
+        "ts",
+        "stage",
+        "passed",
+        "warn",
+        "block",
+        "paths",
+        "artifact_type",
+        "decision_right",
+        "matched",
+    )
+    return {field: row[field] for field in fields if row.get(field) not in (None, "", [])}
+
+
+def _stage_gate_summaries(state: dict) -> tuple[list[dict], list[dict], list[dict]]:
+    rejections: list[dict] = []
+    blocks: list[dict] = []
+    overrides: list[dict] = []
+    for stage_name, stage_state in state.get("stages", {}).items():
+        gate_result = stage_state.get("gate_result")
+        if gate_result == "rejected":
+            entry = {
+                "stage": stage_name,
+                "gate_type": stage_state.get("gate", "unknown"),
+            }
+            if stage_state.get("gate_verdict"):
+                entry["verdict"] = stage_state["gate_verdict"]
+            rejections.append(entry)
+        elif gate_result == "blocked":
+            entry = {
+                "stage": stage_name,
+                "gate_type": stage_state.get("gate", "unknown"),
+            }
+            if stage_state.get("gate_agent"):
+                entry["agent"] = stage_state["gate_agent"]
+            blocks.append(entry)
+
+        if stage_state.get("gate_type") == "criteria_override":
+            entry = {
+                "stage": stage_name,
+                "criteria_failed": stage_state.get("criteria_failed", []),
+                "override_reason": stage_state.get("override_reason", ""),
+            }
+            if stage_state.get("criteria_details"):
+                entry["criteria_details"] = stage_state["criteria_details"]
+            overrides.append(entry)
+
+    return rejections, blocks, overrides
+
+
+def _legacy_governance_metadata(state: dict) -> dict:
+    governance = state.get("governance")
+    metadata = dict(governance) if isinstance(governance, dict) else {}
+    metadata.pop("adoption", None)
+    metadata.pop("tripwire_checks", None)
+
+    for key in (
+        "initiative",
+        "phase",
+        "checkpoint",
+        "burn_estimate",
+        "escalation_status",
+    ):
+        if key not in metadata and state.get(key) is not None:
+            metadata[key] = state[key]
+    return metadata
+
+
+def build_governance_adoption(
+    run_id: str, state: dict, project_root: Path | None = None
+) -> dict | None:
+    """Build a compact governed-delivery adoption summary for status/evidence views."""
+    root = project_root or Path.cwd()
+    governance = state.get("governance")
+    tripwire_checks = governance.get("tripwire_checks", []) if isinstance(governance, dict) else []
+    if not isinstance(tripwire_checks, list):
+        tripwire_checks = []
+
+    errors: list[str] = []
+    try:
+        decisions = [
+            row
+            for row in _read_decisions_from_path(
+                root / ".agenteam" / "governance" / "decisions.jsonl"
+            )
+            if row.get("run_id") == run_id
+        ]
+    except ValueError as e:
+        decisions = []
+        errors.append(str(e))
+
+    gate_rejections, gate_blocks, gate_overrides = _stage_gate_summaries(state)
+    tripwire_decisions = [row for row in decisions if row.get("tripwire_id")]
+    open_followups = [
+        row
+        for row in decisions
+        if row.get("outcome") in OPEN_DECISION_OUTCOMES and row.get("human_disposition") != "agree"
+    ]
+
+    tripwire_ids = {
+        str(row.get("tripwire_id")) for row in tripwire_decisions if row.get("tripwire_id")
+    }
+    for check in tripwire_checks:
+        if not isinstance(check, dict):
+            continue
+        for key in ("warn", "block"):
+            values = check.get(key, [])
+            if isinstance(values, list):
+                tripwire_ids.update(str(value) for value in values)
+
+    summary = {
+        "decision_count": len(decisions),
+        "escalation_count": sum(1 for row in decisions if row.get("outcome") == "escalated"),
+        "open_followup_count": len(open_followups),
+        "tripwire_check_count": len(tripwire_checks),
+        "tripwire_decision_count": len(tripwire_decisions),
+        "tripwire_warn_count": sum(
+            len(check.get("warn", [])) for check in tripwire_checks if isinstance(check, dict)
+        ),
+        "tripwire_block_count": sum(
+            len(check.get("block", [])) for check in tripwire_checks if isinstance(check, dict)
+        ),
+        "gate_rejection_count": len(gate_rejections),
+        "gate_block_count": len(gate_blocks),
+        "gate_override_count": len(gate_overrides),
+    }
+
+    details: dict = {}
+    if decisions:
+        details["decisions"] = [_compact_decision(row) for row in decisions[-5:]]
+    if open_followups:
+        details["open_followups"] = [_compact_decision(row) for row in open_followups[-5:]]
+    if tripwire_checks:
+        details["tripwire_checks"] = [
+            _compact_tripwire_check(row) for row in tripwire_checks[-5:] if isinstance(row, dict)
+        ]
+    if tripwire_ids:
+        details["tripwire_ids"] = sorted(tripwire_ids)
+    if gate_rejections:
+        details["gate_rejections"] = gate_rejections
+    if gate_blocks:
+        details["gate_blocks"] = gate_blocks
+    if gate_overrides:
+        details["gate_overrides"] = gate_overrides
+    if errors:
+        details["errors"] = errors
+
+    if not any(summary.values()) and not details:
+        return None
+    return {**summary, **details}
+
+
+def build_governance_view(
+    run_id: str, state: dict, project_root: Path | None = None
+) -> dict | None:
+    """Merge run metadata with adoption signals for user-facing run views."""
+    view = _legacy_governance_metadata(state)
+    adoption = build_governance_adoption(run_id, state, project_root=project_root)
+    if adoption:
+        view["adoption"] = adoption
+    return view or None
+
+
+def _record_tripwire_check(args, result: dict) -> None:
+    run_id = getattr(args, "run_id", None)
+    if not run_id:
+        return
+
+    try:
+        state_path, state = _load_state_for_governance(run_id, args)
+    except (FileNotFoundError, ValueError) as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+    stage = getattr(args, "stage", None)
+    if stage and stage not in state.get("stages", {}):
+        print(json.dumps({"error": f"Stage '{stage}' not found in run {run_id}"}), file=sys.stderr)
+        sys.exit(1)
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    record = {
+        "ts": now,
+        "stage": stage,
+        "passed": len(result.get("block", [])) == 0,
+        "matched": [rule["id"] for rule in result.get("matched", [])],
+        "warn": result.get("warn", []),
+        "block": result.get("block", []),
+        "paths": result.get("paths", []),
+        "artifact_type": result.get("artifact_type"),
+        "decision_right": result.get("decision_right"),
+    }
+    record = {key: value for key, value in record.items() if value not in (None, "", [])}
+
+    governance = state.setdefault("governance", {})
+    if not isinstance(governance, dict):
+        governance = {}
+        state["governance"] = governance
+    checks = governance.setdefault("tripwire_checks", [])
+    if not isinstance(checks, list):
+        checks = []
+        governance["tripwire_checks"] = checks
+    checks.append(record)
+    state["last_update"] = now
+
+    with open(state_path, "w") as f:
+        json.dump(state, f, indent=2)
 
 
 def cmd_decision_append(args, config: dict | None = None) -> None:
@@ -278,28 +528,11 @@ def cmd_decision_append(args, config: dict | None = None) -> None:
         sys.exit(1)
 
     run_id = getattr(args, "run_id", None)
-    if run_id and not _RUN_ID_RE.match(run_id):
-        print(
-            json.dumps(
-                {
-                    "error": f"Invalid --run-id '{run_id}'. "
-                    "Must contain only alphanumeric characters, hyphens, and underscores."
-                }
-            ),
-            file=sys.stderr,
-        )
-        sys.exit(1)
     if run_id:
         try:
-            state_path = _project_root(args) / ".agenteam" / "state" / f"{run_id}.json"
-        except FileNotFoundError as e:
+            _load_state_for_governance(run_id, args)
+        except (FileNotFoundError, ValueError) as e:
             print(json.dumps({"error": str(e)}), file=sys.stderr)
-            sys.exit(1)
-        if not state_path.exists():
-            print(
-                json.dumps({"error": f"Run {run_id} not found"}),
-                file=sys.stderr,
-            )
             sys.exit(1)
 
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -456,8 +689,12 @@ def cmd_tripwire_check(args, config: dict | None = None) -> None:
         "matched": matched,
         "warn": [rule["id"] for rule in matched if rule.get("severity") == "warn"],
         "block": [rule["id"] for rule in matched if rule.get("severity") == "block"],
+        "passed": not any(rule.get("severity") == "block" for rule in matched),
         "paths": paths,
         "artifact_type": artifact_type,
         "decision_right": decision_right,
     }
+    if getattr(args, "run_id", None):
+        _record_tripwire_check(args, result)
+        result["recorded"] = True
     print(json.dumps(result))

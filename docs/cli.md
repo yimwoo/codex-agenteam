@@ -131,7 +131,16 @@ agenteam-rt decision render-log
 # Evaluate tripwires against changed paths or artifact context
 agenteam-rt tripwire check --path src/auth/login.py
 agenteam-rt tripwire check --artifact-type adr --decision-right schema-change
+
+# Record a tripwire result into a run's governance context
+agenteam-rt tripwire check --run-id <id> --stage implement \
+  --path src/auth/login.py
 ```
+
+When run-scoped governance signals exist, `status`, `status --progress`,
+`standup`, `trace`, and `evidence` include `governance.adoption`: compact
+counts plus recent decision records, tripwire checks, gate rejections, criteria
+overrides, and open follow-ups.
 
 ### Branch & Isolation
 
