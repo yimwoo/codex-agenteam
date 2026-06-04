@@ -85,6 +85,11 @@ agenteam-rt trace --run-id <id> --stale-threshold-minutes 30
 agenteam-rt evidence --run-id <id>
 agenteam-rt evidence --run-id <id> --output .agenteam/evidence/<id>.json
 
+# Export role/workflow definitions as a workspace-agent draft
+agenteam-rt export workspace-agent
+agenteam-rt export workspace-agent --format markdown \
+  --output docs/agenteam-workspace-agent.md
+
 # Get verification plan for a stage
 agenteam-rt verify-plan implement --run-id <id>
 

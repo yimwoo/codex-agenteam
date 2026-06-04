@@ -18,6 +18,7 @@ from .dispatch import (
 )
 from .events import cmd_event_append, cmd_event_list, cmd_event_tail
 from .evidence import cmd_evidence
+from .export import cmd_export_workspace_agent
 from .gates import cmd_gate_eval
 from .generate import cmd_generate
 from .governance import (
@@ -132,6 +133,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=60,
         help="Minutes before an active run is considered stale",
     )
+
+    # export
+    p_export = sub.add_parser("export", help="Export AgenTeam definitions")
+    p_export_sub = p_export.add_subparsers(dest="export_cmd")
+    p_export_workspace = p_export_sub.add_parser(
+        "workspace-agent",
+        help="Export a Codex/ChatGPT workspace-agent draft",
+    )
+    p_export_workspace.add_argument(
+        "--format",
+        choices=["json", "markdown"],
+        default="json",
+        help="Output format",
+    )
+    p_export_workspace.add_argument("--output", default=None, help="Write export to a file")
 
     # policy
     p_policy = sub.add_parser("policy", help="Policy commands")
@@ -487,6 +503,12 @@ def main() -> None:
         cmd_trace(args, config)
     elif args.command == "evidence":
         cmd_evidence(args, config)
+    elif args.command == "export":
+        if args.export_cmd == "workspace-agent":
+            cmd_export_workspace_agent(args, config)
+        else:
+            print(json.dumps({"error": "Unknown export subcommand"}), file=sys.stderr)
+            sys.exit(1)
     elif args.command == "policy":
         if args.policy_cmd == "check":
             cmd_policy_check(args, config)
