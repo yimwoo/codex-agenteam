@@ -4,6 +4,7 @@ import json
 import time
 
 from .artifacts import resolve_artifact_paths_for_config
+from .governance import build_governance_view
 from .memory import build_visible_memory
 from .roles import resolve_roles
 from .state import find_latest_compatible_state
@@ -103,7 +104,9 @@ def cmd_standup(args, config: dict) -> None:
             "task": state.get("task"),
             "current_stage": state.get("current_stage"),
         }
-        governance = _extract_governance(state)
+        governance = build_governance_view(state.get("run_id", ""), state) or _extract_governance(
+            state
+        )
         if isinstance(governance, dict):
             run_summary["governance"] = governance
             run_summary.update(governance)

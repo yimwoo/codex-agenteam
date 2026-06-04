@@ -150,6 +150,12 @@ summaries, final verification, governance metadata when present, and artifact
 paths. It references detailed runner artifacts by path instead of embedding raw
 stdout, stderr, or prompts.
 
+When a run has governance activity, `trace`, `status --progress`, `standup`,
+and `evidence` include `governance.adoption`. This compact projection reports
+decision/escalation counts, recorded tripwire warn/block results, gate
+rejections, criteria overrides, and recent follow-up records for release review
+or audit handoff.
+
 ## Final Verification
 
 After all stages complete, optional final verification runs:

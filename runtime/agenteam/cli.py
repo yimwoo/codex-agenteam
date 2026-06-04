@@ -340,6 +340,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_tripwire_check.add_argument("--path", action="append", default=[])
     p_tripwire_check.add_argument("--artifact-type", dest="artifact_type", default=None)
     p_tripwire_check.add_argument("--decision-right", dest="decision_right", default=None)
+    p_tripwire_check.add_argument(
+        "--run-id",
+        dest="run_id",
+        default=None,
+        help="Record this tripwire result into a run's governance context",
+    )
+    p_tripwire_check.add_argument(
+        "--stage",
+        default=None,
+        help="Optional stage name when recording a run-scoped tripwire result",
+    )
 
     return parser
 

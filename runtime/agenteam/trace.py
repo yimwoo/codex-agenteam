@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .config import resolve_team_config
 from .events import list_events
+from .governance import build_governance_view
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -371,7 +372,7 @@ def build_trace(run_id: str, config: dict, stale_threshold_minutes: int = 60) ->
         trace["final_verify"] = final_verify
     trace["next_action"] = _next_action(run_id, state, stages, stale, final_verify)
 
-    governance = state.get("governance")
+    governance = build_governance_view(run_id, state)
     if isinstance(governance, dict):
         trace["governance"] = governance
     return trace

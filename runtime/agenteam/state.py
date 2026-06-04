@@ -522,5 +522,10 @@ def cmd_status(args, config: dict) -> None:
         print(json.dumps(progress, indent=2))
     else:
         result = dict(state)
+        from .governance import build_governance_view
+
+        governance = build_governance_view(state.get("run_id", ""), state)
+        if isinstance(governance, dict):
+            result["governance"] = governance
         result["memory"] = build_visible_memory(config, current_run_id=state.get("run_id"))
         print(json.dumps(result, indent=2))

@@ -1628,6 +1628,123 @@ class TestGovernedDeliveryFoundations:
         payload = json.loads(check.stdout)
         assert "auth-surface-change" in payload["block"]
 
+    def test_governance_adoption_visible_in_status_standup_and_evidence(self, tmp_path):
+        make_config(tmp_path)
+        run_rt("governed-bootstrap", cwd=str(tmp_path))
+        init = run_rt(
+            "init",
+            "--task",
+            "governance adoption",
+            "--initiative",
+            "checkout-v2",
+            "--phase",
+            "implementation",
+            "--checkpoint",
+            "exit",
+            cwd=str(tmp_path),
+        )
+        assert init.returncode == 0, init.stderr
+        run_id = json.loads(init.stdout)["run_id"]
+
+        tripwire = run_rt(
+            "tripwire",
+            "check",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--path",
+            "src/auth/session.py",
+            cwd=str(tmp_path),
+        )
+        assert tripwire.returncode == 0, tripwire.stderr
+        tripwire_payload = json.loads(tripwire.stdout)
+        assert tripwire_payload["recorded"] is True
+        assert tripwire_payload["passed"] is False
+        assert tripwire_payload["block"] == ["auth-surface-change"]
+
+        decision = _run_decision_append(
+            str(tmp_path),
+            {
+                "outcome": "escalated",
+                "role": "reviewer",
+                "run_id": run_id,
+                "stage": "review",
+                "summary": "Escalate auth tripwire for security review.",
+                "tripwire_id": "auth-surface-change",
+                "decision_right": "security-review",
+            },
+        )
+        assert decision.returncode == 0, decision.stderr
+
+        rejected_gate = run_rt(
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "review",
+            "--gate-type",
+            "human",
+            "--result",
+            "rejected",
+            "--verdict",
+            "BLOCK: security review missing",
+            cwd=str(tmp_path),
+        )
+        assert rejected_gate.returncode == 0, rejected_gate.stderr
+
+        override_gate = run_rt(
+            "record-gate",
+            "--run-id",
+            run_id,
+            "--stage",
+            "implement",
+            "--gate-type",
+            "criteria_override",
+            "--result",
+            "approved",
+            "--criteria-failed",
+            '["max_files_changed"]',
+            "--override-reason",
+            "Generated migration touches expected files.",
+            cwd=str(tmp_path),
+        )
+        assert override_gate.returncode == 0, override_gate.stderr
+
+        status_result = run_rt("status", run_id, cwd=str(tmp_path))
+        progress_result = run_rt("status", run_id, "--progress", cwd=str(tmp_path))
+        standup_result = run_rt("standup", cwd=str(tmp_path))
+        evidence_result = run_rt("evidence", "--run-id", run_id, cwd=str(tmp_path))
+
+        assert status_result.returncode == 0, status_result.stderr
+        assert progress_result.returncode == 0, progress_result.stderr
+        assert standup_result.returncode == 0, standup_result.stderr
+        assert evidence_result.returncode == 0, evidence_result.stderr
+
+        status = json.loads(status_result.stdout)
+        progress = json.loads(progress_result.stdout)
+        standup = json.loads(standup_result.stdout)
+        evidence = json.loads(evidence_result.stdout)
+
+        adoption = status["governance"]["adoption"]
+        assert adoption["decision_count"] == 1
+        assert adoption["escalation_count"] == 1
+        assert adoption["open_followup_count"] == 1
+        assert adoption["tripwire_check_count"] == 1
+        assert adoption["tripwire_block_count"] == 1
+        assert adoption["tripwire_decision_count"] == 1
+        assert adoption["gate_rejection_count"] == 1
+        assert adoption["gate_override_count"] == 1
+        assert adoption["tripwire_ids"] == ["auth-surface-change"]
+        assert adoption["gate_rejections"][0]["stage"] == "review"
+        assert adoption["gate_overrides"][0]["stage"] == "implement"
+        assert adoption["decisions"][0]["summary"] == "Escalate auth tripwire for security review."
+
+        assert progress["governance"]["adoption"]["tripwire_block_count"] == 1
+        assert standup["governance"]["adoption"]["gate_rejection_count"] == 1
+        assert standup["run"]["governance"]["adoption"]["gate_override_count"] == 1
+        assert evidence["governance"]["adoption"] == adoption
+
 
 # ---------------------------------------------------------------------------
 # compute_health (unit-level via subprocess with crafted state files)
