@@ -4,6 +4,15 @@
 
 These are the primary commands for Codex App and Codex CLI users:
 
+### Which entrypoint should I use?
+
+| Goal | Best entrypoint | Notes |
+|------|-----------------|-------|
+| First-time setup | `@ATeam build my team` or `$ateam:init` | Use the natural-language prompt for the quickest first run; use the skill when you want explicit setup behavior. |
+| Run the team on a task | `@ATeam <task>` or `$ateam:run "task"` | Natural-language `@ATeam` requests route to the appropriate skill; `$ateam:run` is the explicit pipeline command. |
+| Talk to one specialist | `@Architect`, `@Dev`, `@Reviewer`, etc. | Use direct role mentions for focused work that does not need the full pipeline. |
+| Debug or automate internals | `agenteam-rt ...` | Runtime commands expose JSON planning, policy, state, and runner primitives. |
+
 | Command | Purpose |
 |---------|---------|
 | `$ateam:init` | Set up team config and generate agents |
@@ -94,7 +103,7 @@ agenteam-rt run --task-file seed.md --profile standard --output-dir ./out
 agenteam-rt run --run-id <id>  # resume an existing run
 ```
 
-`agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed.
+`agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed. The runner invokes Codex with `codex exec --json --sandbox workspace-write` by default; pass an explicit `--sandbox ...` value through `--codex-args` when an automation needs a different boundary.
 
 ### Governed Delivery Foundations
 

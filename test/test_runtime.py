@@ -256,14 +256,14 @@ class TestRoleResolution:
             config = yaml.safe_load(f)
         config.setdefault("roles", {})
         config["roles"].setdefault("architect", {})
-        config["roles"]["architect"]["model"] = "o4-mini"
+        config["roles"]["architect"]["model"] = "gpt-5.5"
         with open(config_path, "w") as f:
             yaml.dump(config, f)
 
         r = run_rt("roles", "show", "architect", cwd=str(tmp_path))
         assert r.returncode == 0
         role = json.loads(r.stdout)
-        assert role["model"] == "o4-mini"
+        assert role["model"] == "gpt-5.5"
         # Original fields should still be present
         assert "design" in role["participates_in"]
 
@@ -335,9 +335,10 @@ class TestTomlGeneration:
         run_rt("generate", cwd=str(tmp_path))
 
         agent = toml_lib.load(str(tmp_path / ".codex" / "agents" / "dev.toml"))
-        assert agent.get("model") == "gpt-5.3-codex"
+        assert agent.get("model") == "gpt-5.4-mini"
         assert agent.get("model_reasoning_effort") == "medium"
         assert agent.get("sandbox_mode") == "workspace-write"
+        assert agent.get("nickname_candidates") == ["Builder", "Implementer", "Patch Lead"]
 
     def test_built_in_roles_generate_codex_supported_models(self, tmp_path):
         import toml as toml_lib
@@ -347,8 +348,8 @@ class TestTomlGeneration:
 
         inherited_roles = {"architect", "pm", "researcher", "reviewer"}
         pinned_roles = {
-            "dev": "gpt-5.3-codex",
-            "qa": "gpt-5.3-codex",
+            "dev": "gpt-5.4-mini",
+            "qa": "gpt-5.4-mini",
         }
 
         for role_name in inherited_roles:
@@ -358,6 +359,47 @@ class TestTomlGeneration:
         for role_name, expected_model in pinned_roles.items():
             agent = toml_lib.load(str(tmp_path / ".codex" / "agents" / f"{role_name}.toml"))
             assert agent.get("model") == expected_model
+
+    def test_role_surface_fields_generate_toml(self, tmp_path):
+        import toml as toml_lib
+
+        config_path = tmp_path / "agenteam.yaml"
+        config = {
+            "version": "1",
+            "roles": {
+                "docs_reviewer": {
+                    "description": "Reviews docs with a project docs tool.",
+                    "participates_in": ["review"],
+                    "can_write": False,
+                    "nickname_candidates": ["Docs One", "Docs Two"],
+                    "mcp_servers": {
+                        "docs": {
+                            "url": "https://developers.openai.com/mcp",
+                            "enabled_tools": ["search_openai_docs"],
+                        }
+                    },
+                    "skills_config": [
+                        {
+                            "path": "/Users/example/.agents/skills/docs/SKILL.md",
+                            "enabled": False,
+                        }
+                    ],
+                    "system_instructions": "Review docs precisely.",
+                }
+            },
+            "pipeline": {"stages": []},
+        }
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("generate", cwd=str(tmp_path))
+        assert r.returncode == 0
+        agent = toml_lib.load(str(tmp_path / ".codex" / "agents" / "docs_reviewer.toml"))
+        assert agent["nickname_candidates"] == ["Docs One", "Docs Two"]
+        assert agent["mcp_servers"]["docs"]["url"] == "https://developers.openai.com/mcp"
+        assert agent["mcp_servers"]["docs"]["enabled_tools"] == ["search_openai_docs"]
+        assert agent["skills"]["config"][0]["path"] == "/Users/example/.agents/skills/docs/SKILL.md"
+        assert agent["skills"]["config"][0]["enabled"] is False
 
     def test_custom_role_generates_toml(self, tmp_path):
         import toml as toml_lib
@@ -4963,7 +5005,7 @@ class TestResume:
             config = yaml.safe_load(f)
         config.setdefault("roles", {})
         config["roles"].setdefault("architect", {})
-        config["roles"]["architect"]["model"] = "o3-pro"
+        config["roles"]["architect"]["model"] = "gpt-5.5"
         with open(config_path, "w") as f:
             yaml.dump(config, f)
         r = run_rt("resume-plan", "--run-id", run_id, cwd=str(tmp_path))
@@ -5030,7 +5072,7 @@ class TestResume:
         personal_dir = tmp_path / ".agenteam"
         personal_dir.mkdir(parents=True, exist_ok=True)
         with open(personal_dir / "config.yaml", "w") as f:
-            yaml.dump({"roles": {"architect": {"model": "o3-pro"}}}, f)
+            yaml.dump({"roles": {"architect": {"model": "gpt-5.5"}}}, f)
 
         r = run_rt("init", "--task", "layered resume", cwd=str(tmp_path))
         assert r.returncode == 0
@@ -6244,6 +6286,45 @@ class TestTwoLayerConfig:
         assert "Team instructions." in instructions
         assert "Personal addendum." in instructions
 
+    def test_personal_agent_surface_overrides_are_allowed(self, tmp_path):
+        """Personal config can wire local Codex agent display and tool settings."""
+        self._make_team_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "researcher": {
+                        "nickname_candidates": ["Team Researcher"],
+                    },
+                },
+                "pipeline": {"stages": []},
+            },
+        )
+        self._make_personal_config(
+            tmp_path,
+            {
+                "version": "2",
+                "roles": {
+                    "researcher": {
+                        "nickname_candidates": ["Local Researcher"],
+                        "mcp_servers": {"docs": {"url": "https://developers.openai.com/mcp"}},
+                        "skills_config": [
+                            {
+                                "path": "/Users/example/.agents/skills/docs/SKILL.md",
+                                "enabled": False,
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+        r = run_rt("roles", "show", "researcher", cwd=str(tmp_path))
+        assert r.returncode == 0
+        role = json.loads(r.stdout)
+        assert role["nickname_candidates"] == ["Local Researcher"]
+        assert role["mcp_servers"]["docs"]["url"] == "https://developers.openai.com/mcp"
+        assert role["skills_config"][0]["enabled"] is False
+
     def test_allow_personal_override_escape_hatch(self, tmp_path):
         """Team allows personal isolation override via escape hatch."""
         self._make_team_config(
@@ -6897,6 +6978,36 @@ sys.exit(code)
             "--skip-git-repo-check",
         ]
 
+    def test_build_codex_exec_command_defaults_to_workspace_write_sandbox(self):
+        from runtime.agenteam.runner import _build_codex_exec_command, _parse_codex_args
+
+        assert _build_codex_exec_command(
+            "codex",
+            _parse_codex_args("skip-git-repo-check"),
+        ) == [
+            "codex",
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+        ]
+
+    def test_build_codex_exec_command_respects_explicit_sandbox(self):
+        from runtime.agenteam.runner import _build_codex_exec_command, _parse_codex_args
+
+        assert _build_codex_exec_command(
+            "codex",
+            _parse_codex_args("--sandbox read-only skip-git-repo-check"),
+        ) == [
+            "codex",
+            "exec",
+            "--json",
+            "--sandbox",
+            "read-only",
+            "--skip-git-repo-check",
+        ]
+
     def test_run_missing_codex_binary_fails(self, tmp_path):
         make_config(tmp_path)
         r = run_rt(
@@ -6976,7 +7087,8 @@ sys.exit(code)
             "codex",
             "exec",
             "--json",
-            "--full-auto",
+            "--sandbox",
+            "workspace-write",
             "--skip-git-repo-check",
         ]
         assert captured["input"] == "hello"

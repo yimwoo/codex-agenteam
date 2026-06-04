@@ -17,6 +17,8 @@ from .state import (
 from .transitions import transition
 from .verify import detect_verify_command
 
+DEFAULT_CODEX_SANDBOX = "workspace-write"
+
 
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -70,6 +72,29 @@ def _parse_codex_args(raw_args: str) -> list[str]:
             normalized.append(token)
 
     return normalized
+
+
+def _codex_args_set_sandbox(codex_args: list[str]) -> bool:
+    """Return True when passthrough args already control the sandbox boundary."""
+    sandbox_flags = {
+        "--sandbox",
+        "-s",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--full-auto",
+    }
+    for token in codex_args:
+        if token in sandbox_flags or token.startswith("--sandbox="):
+            return True
+    return False
+
+
+def _build_codex_exec_command(codex_bin: str, codex_args: list[str]) -> list[str]:
+    """Build the codex exec command using current explicit sandbox flags."""
+    cmd = [codex_bin, "exec", "--json"]
+    if not _codex_args_set_sandbox(codex_args):
+        cmd.extend(["--sandbox", DEFAULT_CODEX_SANDBOX])
+    cmd.extend(codex_args)
+    return cmd
 
 
 def _load_state(run_id: str) -> dict:
@@ -270,7 +295,7 @@ def _run_role(
     append_event(run_id, "role_started", stage, {"role": role_name})
 
     start = time.time()
-    cmd = [codex_bin, "exec", "--json", "--full-auto", *codex_args]
+    cmd = _build_codex_exec_command(codex_bin, codex_args)
 
     try:
         proc = subprocess.run(  # noqa: S603

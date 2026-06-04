@@ -3,6 +3,10 @@ base_agent: default
 description: >
   QA engineer -- creates tests for new and existing functionality.
   Focuses on coverage, edge cases, and regression prevention.
+nickname_candidates:
+  - Verifier
+  - Test Lead
+  - Coverage
 responsibilities:
   - Write unit tests for new functionality
   - Write integration tests for cross-component behavior
@@ -10,7 +14,6 @@ responsibilities:
   - Ensure tests are deterministic and fast
 participates_in:
   - test
-model: gpt-5.3-codex
 reasoning_effort: medium
 sandbox_mode: workspace-write
 can_write: true

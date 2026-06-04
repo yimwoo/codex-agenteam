@@ -3,6 +3,10 @@ base_agent: default
 description: >
   Primary code writer. Implements features, fixes bugs, and writes
   production code following existing patterns and conventions.
+nickname_candidates:
+  - Builder
+  - Implementer
+  - Patch Lead
 responsibilities:
   - Implement features and fixes according to the approved design
   - Follow existing code patterns and project conventions
@@ -11,7 +15,6 @@ responsibilities:
 participates_in:
   - plan
   - implement
-model: gpt-5.3-codex
 reasoning_effort: medium
 sandbox_mode: workspace-write
 can_write: true

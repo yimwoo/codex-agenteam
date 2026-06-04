@@ -9,7 +9,7 @@ AgenTeam supports a two-layer config model for team collaboration:
 | File | Purpose | Tracked in git? |
 |------|---------|----------------|
 | `.agenteam.team/config.yaml` | **Team config** — shared pipeline, roles, stages, isolation | Yes |
-| `.agenteam/config.yaml` | **Personal config** — local overrides (model, reasoning_effort) | No (gitignored) |
+| `.agenteam/config.yaml` | **Personal config** — local model, reasoning, instructions, and agent-surface overrides | No (gitignored) |
 | `agenteam.yaml` | Legacy config (still supported) | No (gitignored) |
 
 **How it works:**
@@ -56,7 +56,7 @@ isolation: branch              # branch (default) | worktree | none
 # Override built-in roles or add custom ones
 roles:
   dev:
-    model: o4-mini
+    model: gpt-5.4-mini
     reasoning_effort: high
     write_scope:
       - "src/**"
@@ -116,6 +116,25 @@ pipeline:
 ```
 
 Use profiles with `@ATeam --profile quick fix the typo in README`.
+
+## Generated Codex Agents
+
+`agenteam-rt generate` writes resolved roles to `.codex/agents/*.toml` using
+Codex's custom-agent format. AgenTeam always emits `name`, `description`, and
+`developer_instructions`; optional role fields are passed through when present:
+
+| Role field | Generated TOML purpose |
+|------------|------------------------|
+| `model` | Per-agent model override |
+| `reasoning_effort` | `model_reasoning_effort` |
+| `sandbox_mode` | Per-agent sandbox preference |
+| `nickname_candidates` | Display nicknames when Codex shows multiple spawned agents |
+| `mcp_servers` | Per-agent MCP server configuration |
+| `skills_config` | Per-agent `skills.config` entries |
+
+Model and tool availability can vary by user and workspace, so prefer putting
+model pins and private tool wiring in personal config unless the whole team has
+the same Codex setup.
 
 ## Built-in Roles
 
@@ -177,8 +196,8 @@ Different roles benefit from different model strengths. Analysis roles (research
 
 | Role Class | Examples | Recommended Model Type |
 |-----------|----------|----------------------|
-| Analysis | researcher, pm, architect, reviewer | Strong reasoning (e.g., `o3-pro`, `claude-sonnet-4-5`) |
-| Execution | dev, qa | Fast coding (e.g., `gpt-5.3-codex`, `claude-sonnet-4-5`) |
+| Analysis | researcher, pm, architect, reviewer | Strong reasoning (e.g., `gpt-5.5`) |
+| Execution | dev, qa | Fast coding/subagent work (e.g., `gpt-5.4-mini`) |
 
 Model selection is a **personal override** — `share-config` strips `model` and `reasoning_effort` from team config because model availability varies by platform and API key.
 
@@ -186,13 +205,13 @@ Model selection is a **personal override** — `share-config` strips `model` and
 # In .agenteam/config.yaml (personal)
 roles:
   architect:
-    model: o3-pro              # strong reasoning for design
+    model: gpt-5.5             # strong reasoning for design
   researcher:
-    model: o3-pro              # strong reasoning for research
+    model: gpt-5.5             # strong reasoning for research
   dev:
-    model: gpt-5.3-codex       # fast coding for implementation
+    model: gpt-5.4-mini        # fast coding for implementation
   qa:
-    model: gpt-5.3-codex       # fast coding for tests
+    model: gpt-5.4-mini        # fast coding for tests
 ```
 
 **When to override the defaults:**
@@ -208,9 +227,9 @@ Using the same model for both dev (writing code) and reviewer (reviewing code) c
 ```yaml
 roles:
   dev:
-    model: gpt-5.3-codex       # writes code
+    model: gpt-5.4-mini        # writes code
   reviewer:
-    model: o3-pro              # reviews with different reasoning
+    model: gpt-5.5             # reviews with different reasoning
 ```
 
 This is especially valuable for security-sensitive work where independent review matters most.
@@ -224,7 +243,8 @@ For teams, create a shared config that all members use:
 ```
 
 This copies your local config to `.agenteam.team/config.yaml`, strips personal
-fields (model, reasoning_effort, system_instructions), and sets `version: "2"`.
+fields (model, reasoning effort, personal instructions, nicknames, and local
+tool wiring), and sets `version: "2"`.
 Commit it to git:
 
 ```bash
@@ -244,6 +264,9 @@ Personal config (`.agenteam/config.yaml`) can override a limited set of fields:
 | `roles.<name>.model` | Replace (use a different model locally) |
 | `roles.<name>.reasoning_effort` | Replace |
 | `roles.<name>.system_instructions` | Append (personal addendum, not replacement) |
+| `roles.<name>.nickname_candidates` | Replace |
+| `roles.<name>.mcp_servers` | Replace |
+| `roles.<name>.skills_config` | Replace |
 
 **Non-overridable fields** (always from team config):
 - `pipeline.stages`, gates, verify commands
@@ -268,7 +291,7 @@ Example personal override:
 version: "2"
 roles:
   dev:
-    model: o4-mini
+    model: gpt-5.4-mini
     reasoning_effort: medium
 ```
 
