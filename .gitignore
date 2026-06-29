@@ -25,9 +25,13 @@ docs/strategies/
 docs/research/
 docs/meetings/
 docs/ui/
-docs/README.md
 docs/benchmarking.md
-benchmarks/
+
+# Keep the benchmark methodology, core suite, and sample fixtures public while
+# excluding contributor-specific result matrices and reports.
+benchmarks/results/*
+!benchmarks/results/sample-results.json
+!benchmarks/results/sample-report.md
 CLAUDE.md
 AGENTS.md
 
