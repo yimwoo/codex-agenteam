@@ -191,7 +191,7 @@ behavior brittle.
 
 ## Benchmark Gate Before Executor Migration
 
-The planned v3.11 runner-backed benchmark must compare at least:
+The planned v3.12 runner-backed benchmark must compare at least:
 
 1. Current recommended single-agent Codex.
 2. GPT-5.6 Sol `ultra` when generally available to the test environment.
