@@ -7,6 +7,12 @@ import sys
 import yaml
 
 from .artifacts import cmd_artifact_paths
+from .benchmark import (
+    cmd_benchmark_init_results,
+    cmd_benchmark_record,
+    cmd_benchmark_report,
+    cmd_benchmark_validate,
+)
 from .branch import cmd_branch_plan
 from .config import find_config, load_config, load_config_merged_raw, resolve_project_root
 from .dispatch import (
@@ -150,6 +156,54 @@ def build_parser() -> argparse.ArgumentParser:
         default=60,
         help="Minutes before an active run is considered stale",
     )
+
+    # benchmark
+    p_benchmark = sub.add_parser("benchmark", help="Benchmark suite and result commands")
+    p_benchmark_sub = p_benchmark.add_subparsers(dest="benchmark_cmd")
+
+    p_benchmark_validate = p_benchmark_sub.add_parser(
+        "validate",
+        help="Validate a benchmark suite and optional results",
+    )
+    p_benchmark_validate.add_argument("--suite", required=True)
+    p_benchmark_validate.add_argument("--results", default=None)
+
+    p_benchmark_init = p_benchmark_sub.add_parser(
+        "init-results",
+        help="Create a benchmark result matrix",
+    )
+    p_benchmark_init.add_argument("--suite", required=True)
+    p_benchmark_init.add_argument("--strategy", action="append", required=True)
+    p_benchmark_init.add_argument("--output", default=None)
+
+    p_benchmark_record = p_benchmark_sub.add_parser(
+        "record",
+        help="Convert run evidence into a benchmark result row",
+    )
+    p_benchmark_record.add_argument("--suite", required=True)
+    p_benchmark_record.add_argument("--results", required=True)
+    p_benchmark_record.add_argument("--evidence", required=True)
+    p_benchmark_record.add_argument("--task-id", dest="task_id", required=True)
+    p_benchmark_record.add_argument("--strategy", required=True)
+    p_benchmark_record.add_argument(
+        "--quality-score", dest="quality_score", type=float, required=True
+    )
+    p_benchmark_record.add_argument("--cost-usd", dest="cost_usd", type=float, default=None)
+    p_benchmark_record.add_argument("--model", default=None)
+    p_benchmark_record.add_argument("--notes", default="")
+    p_benchmark_record.add_argument(
+        "--output",
+        default=None,
+        help="Write to another results file instead of updating --results",
+    )
+
+    p_benchmark_report = p_benchmark_sub.add_parser(
+        "report",
+        help="Aggregate benchmark results",
+    )
+    p_benchmark_report.add_argument("--suite", required=True)
+    p_benchmark_report.add_argument("--results", required=True)
+    p_benchmark_report.add_argument("--markdown-out", dest="markdown_out", default=None)
 
     # export
     p_export = sub.add_parser("export", help="Export AgenTeam definitions")
@@ -399,6 +453,20 @@ def main() -> None:
     # Doctor can inspect Codex with or without project config.
     if args.command == "doctor":
         cmd_doctor(args)
+        return
+
+    if args.command == "benchmark":
+        if args.benchmark_cmd == "validate":
+            cmd_benchmark_validate(args)
+        elif args.benchmark_cmd == "init-results":
+            cmd_benchmark_init_results(args)
+        elif args.benchmark_cmd == "record":
+            cmd_benchmark_record(args)
+        elif args.benchmark_cmd == "report":
+            cmd_benchmark_report(args)
+        else:
+            print(json.dumps({"error": "Unknown benchmark subcommand"}), file=sys.stderr)
+            sys.exit(1)
         return
 
     # HOTL check doesn't need config

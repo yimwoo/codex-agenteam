@@ -15,6 +15,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _elapsed_seconds(start_iso: str | None, end_iso: str | None) -> float | None:
+    if not start_iso or not end_iso:
+        return None
+    try:
+        start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+        elapsed = (end - start).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return round(elapsed, 4) if elapsed >= 0 else None
+
+
 def _role_exits(events: list[dict]) -> list[dict]:
     exits = []
     for event in events:
@@ -248,6 +260,10 @@ def build_evidence(run_id: str, config: dict, stale_threshold_minutes: int = 60)
             "started_at": trace.get("started_at"),
             "last_update": trace.get("last_update"),
             "elapsed": trace.get("elapsed", ""),
+            "elapsed_seconds": _elapsed_seconds(
+                trace.get("started_at"),
+                trace.get("last_update"),
+            ),
             "current_stage": trace.get("current_stage"),
         },
         "outcome": _outcome_from_trace(trace),
