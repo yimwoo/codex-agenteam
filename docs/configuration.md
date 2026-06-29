@@ -136,6 +136,12 @@ Model and tool availability can vary by user and workspace, so prefer putting
 model pins and private tool wiring in personal config unless the whole team has
 the same Codex setup.
 
+`reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, `xhigh`, and
+preview `max`. Support is model-dependent: accepting a value in AgenTeam config
+does not guarantee that the selected Codex model supports it. Run
+`agenteam-rt doctor` before relying on a local model pin. A later capability
+provider will validate reasoning against Codex App Server `model/list` output.
+
 ## Workspace-Agent Draft Export
 
 `agenteam-rt export workspace-agent` creates a local draft that maps AgenTeam's
@@ -218,6 +224,12 @@ Different roles benefit from different model strengths. Analysis roles (research
 
 Model selection is a **personal override** — `share-config` strips `model` and `reasoning_effort` from team config because model availability varies by platform and API key.
 
+GPT-5.6 Sol, Terra, and Luna are limited-preview models as of 2026-06-29. Do
+not put them in shared defaults until the intended workspace has access and the
+models are generally available. `max` is a reasoning effort for supported
+GPT-5.6 models; `ultra` is a native multi-agent execution mode, not a valid
+`reasoning_effort` value.
+
 ```yaml
 # In .agenteam/config.yaml (personal)
 roles:
@@ -250,6 +262,18 @@ roles:
 ```
 
 This is especially valuable for security-sensitive work where independent review matters most.
+
+### Diagnose Model Pins
+
+```bash
+agenteam-rt doctor
+agenteam-rt doctor --strict
+```
+
+Doctor uses local Codex commands only. Known-deprecated model pins are warnings
+because an API-key workflow may retain access after ChatGPT-authenticated Codex
+sessions deprecate the same model. Remove a stale pin to inherit Codex's
+recommended default, or replace it with a model listed in your environment.
 
 ## Team Config (Shared)
 

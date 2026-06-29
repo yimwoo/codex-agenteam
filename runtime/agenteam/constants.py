@@ -21,7 +21,11 @@ VALID_ISOLATION = {"branch", "worktree", "none"}
 VALID_VERSIONS = {"1", "2"}
 VALID_GATE_TYPES = {"auto", "human", "reviewer", "qa"}
 VALID_FINAL_VERIFY_POLICIES = {"block", "warn"}
-VALID_REASONING_EFFORT = {"low", "medium", "high"}
+VALID_REASONING_EFFORT = {"minimal", "low", "medium", "high", "xhigh", "max"}
+DEPRECATED_CODEX_MODELS = {
+    "gpt-5.2": "Deprecated for ChatGPT-authenticated Codex sessions.",
+    "gpt-5.3-codex": "Deprecated for ChatGPT-authenticated Codex sessions.",
+}
 KNOWN_TOP_LEVEL_KEYS = {
     "version",
     "isolation",

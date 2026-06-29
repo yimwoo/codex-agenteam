@@ -905,6 +905,110 @@ class TestPolicyCheck:
 
 
 # ---------------------------------------------------------------------------
+# Codex compatibility doctor
+# ---------------------------------------------------------------------------
+
+
+class TestDoctorCommand:
+    def _write_fake_codex(self, tmp_path: Path, *, features_exit_code: int = 0) -> Path:
+        fake = tmp_path / "fake-codex"
+        fake.write_text(
+            f"""#!{sys.executable}
+import sys
+
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("codex-cli 0.137.0")
+    raise SystemExit(0)
+if args == ["features", "list"]:
+    print("hooks              stable  true")
+    print("multi_agent        stable  true")
+    print("goals              stable  true")
+    print("plugins            stable  true")
+    print("unified_exec       stable  true")
+    raise SystemExit({features_exit_code})
+raise SystemExit(2)
+"""
+        )
+        fake.chmod(0o755)
+        return fake
+
+    def test_doctor_works_without_project_config(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        assert result["codex"]["version"] == "0.137.0"
+        assert result["features"]["hooks"] == {"stage": "stable", "enabled": True}
+        assert result["config"] == {"found": False, "path": None, "model_pins": []}
+        assert result["diagnostics"] == []
+
+    def test_doctor_reports_deprecated_effective_model_pins(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path)
+        config_path = make_config(tmp_path)
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        config["roles"]["dev"]["model"] = "gpt-5.3-codex"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        dev_pin = next(pin for pin in result["config"]["model_pins"] if pin["role"] == "dev")
+        assert dev_pin == {"role": "dev", "model": "gpt-5.3-codex", "deprecated": True}
+        assert any(item["code"] == "D005" for item in result["diagnostics"])
+
+    def test_doctor_strict_fails_when_binary_is_missing(self, tmp_path):
+        missing = tmp_path / "missing-codex"
+
+        r = run_rt(
+            "doctor",
+            "--codex-bin",
+            str(missing),
+            "--strict",
+            cwd=str(tmp_path),
+        )
+
+        assert r.returncode == 1
+        result = json.loads(r.stdout)
+        assert result["ready"] is False
+        assert result["codex"]["available"] is False
+        assert result["diagnostics"][0]["code"] == "D001"
+
+    def test_doctor_feature_failure_is_non_blocking_warning(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path, features_exit_code=7)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        assert result["features"] == {}
+        assert result["diagnostics"][0]["code"] == "D003"
+        assert result["diagnostics"][0]["severity"] == "warning"
+
+    def test_doctor_reports_invalid_config_without_traceback(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path)
+        (tmp_path / "agenteam.yaml").write_text('version: "2"\nroles: []\n')
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is False
+        assert result["config"]["found"] is True
+        assert result["diagnostics"][0]["code"] == "D004"
+        assert "roles" in result["diagnostics"][0]["message"]
+        assert r.stderr == ""
+
+
+# ---------------------------------------------------------------------------
 # HOTL detection
 # ---------------------------------------------------------------------------
 
@@ -5787,6 +5891,48 @@ class TestSchemaValidation:
         assert r.returncode != 0
         codes = self._diag_codes(r)
         assert "E003" in codes
+
+    def test_current_and_preview_reasoning_efforts_are_accepted(self, tmp_path):
+        for effort in ["minimal", "low", "medium", "high", "xhigh", "max"]:
+            config = {
+                "version": "2",
+                "roles": {"dev": {"reasoning_effort": effort}},
+                "pipeline": {"stages": []},
+            }
+
+            r = self._validate(tmp_path, config)
+
+            assert r.returncode == 0, f"{effort}: {r.stdout} {r.stderr}"
+
+    def test_unknown_reasoning_effort_is_rejected_without_resolved_stages(self, tmp_path):
+        config = {
+            "version": "2",
+            "roles": {"dev": {"reasoning_effort": "ultra"}},
+            "pipeline": {"stages": []},
+        }
+
+        r = self._validate(tmp_path, config)
+
+        assert r.returncode == 1
+        diagnostics = json.loads(r.stdout)["diagnostics"]
+        finding = next(item for item in diagnostics if item["path"] == "roles.dev.reasoning_effort")
+        assert finding["code"] == "E002"
+        assert "max" in finding["message"]
+
+    def test_deprecated_codex_model_pin_emits_warning(self, tmp_path):
+        config = {
+            "version": "2",
+            "roles": {"dev": {"model": "gpt-5.3-codex"}},
+            "pipeline": {"stages": []},
+        }
+
+        r = self._validate(tmp_path, config)
+
+        assert r.returncode == 0
+        diagnostics = json.loads(r.stdout)["diagnostics"]
+        finding = next(item for item in diagnostics if item["code"] == "W006")
+        assert finding["path"] == "roles.dev.model"
+        assert "ChatGPT-authenticated" in finding["message"]
 
     def test_duplicate_stage_names(self, tmp_path):
         """E011: duplicate stage names in pipeline.stages."""

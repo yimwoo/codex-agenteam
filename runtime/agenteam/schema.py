@@ -5,10 +5,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .constants import (
+    DEPRECATED_CODEX_MODELS,
     KNOWN_TOP_LEVEL_KEYS,
     VALID_FINAL_VERIFY_POLICIES,
     VALID_ISOLATION,
     VALID_PIPELINES,
+    VALID_REASONING_EFFORT,
     VALID_VERSIONS,
     VALID_WRITE_MODES,
 )
@@ -88,6 +90,7 @@ def validate_schema(
     _pass_legacy_keys(config, result)
     _pass_pipeline_stages(config, result)
     _pass_final_verify(config, result)
+    _pass_role_settings(config, result)
     if resolved_roles is not None:
         _pass_cross_references(config, resolved_roles, result)
     _pass_profiles(config, result)
@@ -419,7 +422,45 @@ def _pass_final_verify(config: dict, result: ValidationResult) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pass 6: Cross-references
+# Pass 6: Role settings
+# ---------------------------------------------------------------------------
+
+
+def _pass_role_settings(config: dict, result: ValidationResult) -> None:
+    """Validate model-facing role settings without requiring role resolution."""
+    role_overrides = config.get("roles", {})
+    if isinstance(role_overrides, dict):
+        for role_name, role_cfg in role_overrides.items():
+            if isinstance(role_cfg, dict):
+                re_val = role_cfg.get("reasoning_effort")
+                if re_val is not None and re_val not in VALID_REASONING_EFFORT:
+                    result.diagnostics.append(
+                        Diagnostic(
+                            Severity.ERROR,
+                            f"roles.{role_name}.reasoning_effort",
+                            f"roles.{role_name}.reasoning_effort: invalid value '{re_val}'. "
+                            f"Must be one of: {', '.join(sorted(VALID_REASONING_EFFORT))}",
+                            "E002",
+                        )
+                    )
+
+                model = role_cfg.get("model")
+                if model in DEPRECATED_CODEX_MODELS:
+                    result.diagnostics.append(
+                        Diagnostic(
+                            Severity.WARNING,
+                            f"roles.{role_name}.model",
+                            f"roles.{role_name}.model: '{model}' is deprecated for "
+                            "ChatGPT-authenticated Codex sessions. Remove the pin to use "
+                            "Codex's recommended default or choose a model available in your "
+                            "environment.",
+                            "W006",
+                        )
+                    )
+
+
+# ---------------------------------------------------------------------------
+# Pass 7: Cross-references
 # ---------------------------------------------------------------------------
 
 
@@ -428,8 +469,6 @@ def _pass_cross_references(
     resolved_roles: dict,
     result: ValidationResult,
 ) -> None:
-    from .constants import VALID_REASONING_EFFORT
-
     pipeline_val = config.get("pipeline")
     if isinstance(pipeline_val, dict):
         stages = pipeline_val.get("stages", [])
@@ -454,26 +493,9 @@ def _pass_cross_references(
                             )
                         )
 
-    # Validate reasoning_effort in role overrides
-    role_overrides = config.get("roles", {})
-    if isinstance(role_overrides, dict):
-        for role_name, role_cfg in role_overrides.items():
-            if isinstance(role_cfg, dict):
-                re_val = role_cfg.get("reasoning_effort")
-                if re_val is not None and re_val not in VALID_REASONING_EFFORT:
-                    result.diagnostics.append(
-                        Diagnostic(
-                            Severity.ERROR,
-                            f"roles.{role_name}.reasoning_effort",
-                            f"roles.{role_name}.reasoning_effort: invalid value '{re_val}'. "
-                            f"Must be one of: {', '.join(sorted(VALID_REASONING_EFFORT))}",
-                            "E002",
-                        )
-                    )
-
 
 # ---------------------------------------------------------------------------
-# Pass 7: Profiles
+# Pass 8: Profiles
 # ---------------------------------------------------------------------------
 
 

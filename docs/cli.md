@@ -40,6 +40,11 @@ agenteam-rt validate
 agenteam-rt validate --format diagnostics    # full structured output
 agenteam-rt validate --strict                # treat warnings as errors
 
+# Diagnose local Codex compatibility (config optional)
+agenteam-rt doctor
+agenteam-rt doctor --strict                  # fail on warnings or errors
+agenteam-rt doctor --codex-bin /path/to/codex
+
 # Migrate legacy config to canonical format
 agenteam-rt migrate --dry-run                # preview changes
 agenteam-rt migrate                          # apply migration
@@ -199,6 +204,9 @@ agenteam-rt run-report --run-id <id>
 
 # Show runtime/project readiness
 agenteam-rt health
+
+# Show Codex version/features and effective model-pin diagnostics
+agenteam-rt doctor
 
 # Assemble standup summary with current health, dispatch hints, and
 # compatible carry-forward memory
