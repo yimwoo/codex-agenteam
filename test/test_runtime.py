@@ -8527,3 +8527,256 @@ raise SystemExit(1 if count == 0 else 0)
         assert stdout_payload["generated_at"]
         assert file_payload == stdout_payload
         assert file_payload["run"]["run_id"] == state["run_id"]
+        assert file_payload["run"]["elapsed_seconds"] >= 0
+
+
+class TestBenchmarkCommands:
+    @staticmethod
+    def _write_suite(tmp_path: Path) -> Path:
+        suite = tmp_path / "suite.yaml"
+        suite.write_text(
+            yaml.safe_dump(
+                {
+                    "suite_id": "test-suite",
+                    "description": "Evidence-backed benchmark test suite",
+                    "quality_scale": "0.0-1.0",
+                    "tasks": [
+                        {
+                            "id": "task-one",
+                            "title": "Task one",
+                            "category": "feature",
+                            "difficulty": "medium",
+                            "prompt": "Implement task one",
+                            "checks": ["python3 -m pytest"],
+                            "acceptance": ["Tests pass"],
+                        }
+                    ],
+                }
+            )
+        )
+        return suite
+
+    @staticmethod
+    def _write_evidence(
+        tmp_path: Path,
+        *,
+        result: str = "completed",
+        reason: str = "run completed",
+        failed_stage_count: int = 0,
+        final_verify_passed: bool | None = True,
+    ) -> Path:
+        evidence = tmp_path / f"evidence-{result}.json"
+        evidence.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1",
+                    "kind": "agenteam.run_evidence",
+                    "generated_at": "2026-06-29T12:02:00Z",
+                    "run": {
+                        "run_id": f"run-{result}",
+                        "task": "Task one",
+                        "profile": "minimal-team",
+                        "pipeline_mode": "standalone",
+                        "status": result,
+                        "started_at": "2026-06-29T12:00:00Z",
+                        "last_update": "2026-06-29T12:02:00Z",
+                        "elapsed_seconds": 120,
+                    },
+                    "outcome": {"result": result, "reason": reason},
+                    "metrics": {
+                        "failed_stage_count": failed_stage_count,
+                        "role_attempt_count": 3,
+                        "role_failure_count": failed_stage_count,
+                        "verify_attempt_count": 2,
+                        "retry_count": 1,
+                        "rework_count": 1,
+                        "gate_block_count": 0,
+                        "artifact_count": 6,
+                    },
+                    "final_verify": {
+                        "configured": True,
+                        "passed": final_verify_passed,
+                        "attempts": 1,
+                    },
+                }
+            )
+        )
+        return evidence
+
+    def _init_results(self, tmp_path: Path, suite: Path) -> Path:
+        results = tmp_path / "results.json"
+        init = run_rt(
+            "benchmark",
+            "init-results",
+            "--suite",
+            str(suite),
+            "--strategy",
+            "minimal-team",
+            "--output",
+            str(results),
+            cwd=str(tmp_path),
+        )
+        assert init.returncode == 0, init.stderr
+        return results
+
+    def test_benchmark_validate_works_without_project_config(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+
+        result = run_rt("benchmark", "validate", "--suite", str(suite), cwd=str(tmp_path))
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload == {
+            "valid": True,
+            "suite_id": "test-suite",
+            "task_count": 1,
+            "quality_scale": "0.0-1.0",
+        }
+
+    def test_benchmark_record_converts_evidence_and_reports_recovery_metrics(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        results = self._init_results(tmp_path, suite)
+        evidence = self._write_evidence(tmp_path)
+        markdown = tmp_path / "report.md"
+
+        record = run_rt(
+            "benchmark",
+            "record",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            "--evidence",
+            str(evidence),
+            "--task-id",
+            "task-one",
+            "--strategy",
+            "minimal-team",
+            "--quality-score",
+            "0.88",
+            "--model",
+            "current-codex",
+            cwd=str(tmp_path),
+        )
+
+        assert record.returncode == 0, record.stderr
+        receipt = json.loads(record.stdout)
+        assert receipt["recorded"] is True
+        assert receipt["success"] is True
+        assert receipt["latency_seconds"] == 120.0
+        assert receipt["cost_usd"] is None
+
+        row = json.loads(results.read_text())["runs"][0]
+        assert row["status"] == "recorded"
+        assert row["profile"] == "minimal-team"
+        assert row["failure_reason"] is None
+        assert row["evidence"]["retry_count"] == 1
+        assert row["evidence"]["rework_count"] == 1
+        assert row["evidence"]["artifact_count"] == 6
+
+        validate = run_rt(
+            "benchmark",
+            "validate",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            cwd=str(tmp_path),
+        )
+        assert validate.returncode == 0, validate.stderr
+
+        report = run_rt(
+            "benchmark",
+            "report",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            "--markdown-out",
+            str(markdown),
+            cwd=str(tmp_path),
+        )
+        assert report.returncode == 0, report.stderr
+        summary = json.loads(report.stdout)["strategies"][0]
+        assert summary["evidence_run_count"] == 1
+        assert summary["total_failed_stage_count"] == 0
+        assert summary["total_role_attempt_count"] == 3
+        assert summary["total_verify_attempt_count"] == 2
+        assert summary["total_retry_count"] == 1
+        assert summary["total_rework_count"] == 1
+        assert summary["total_artifact_count"] == 6
+        assert "## Evidence And Recovery" in markdown.read_text()
+
+    def test_benchmark_record_preserves_failure_and_alternate_output(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        results = self._init_results(tmp_path, suite)
+        evidence = self._write_evidence(
+            tmp_path,
+            result="failed",
+            reason="final verification failed",
+            failed_stage_count=1,
+            final_verify_passed=False,
+        )
+        legacy_evidence = json.loads(evidence.read_text())
+        del legacy_evidence["run"]["elapsed_seconds"]
+        evidence.write_text(json.dumps(legacy_evidence))
+        output = tmp_path / "recorded-results.json"
+
+        record = run_rt(
+            "benchmark",
+            "record",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            "--evidence",
+            str(evidence),
+            "--task-id",
+            "task-one",
+            "--strategy",
+            "minimal-team",
+            "--quality-score",
+            "0.35",
+            "--cost-usd",
+            "0.42",
+            "--output",
+            str(output),
+            cwd=str(tmp_path),
+        )
+
+        assert record.returncode == 0, record.stderr
+        assert json.loads(results.read_text())["runs"][0]["status"] == "pending"
+        row = json.loads(output.read_text())["runs"][0]
+        assert row["success"] is False
+        assert row["failure_reason"] == "final verification failed"
+        assert row["latency_seconds"] == 120.0
+        assert row["cost_usd"] == 0.42
+        assert row["evidence"]["final_verify_passed"] is False
+        assert row["evidence"]["role_failure_count"] == 1
+
+    def test_benchmark_record_rejects_nonterminal_evidence(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        results = self._init_results(tmp_path, suite)
+        evidence = self._write_evidence(tmp_path, result="running", reason="run running")
+
+        record = run_rt(
+            "benchmark",
+            "record",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            "--evidence",
+            str(evidence),
+            "--task-id",
+            "task-one",
+            "--strategy",
+            "minimal-team",
+            "--quality-score",
+            "0.5",
+            cwd=str(tmp_path),
+        )
+
+        assert record.returncode != 0
+        error = json.loads(record.stderr)
+        assert "terminal" in error["error"]

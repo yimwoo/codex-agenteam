@@ -150,6 +150,23 @@ summaries, final verification, governance metadata when present, and artifact
 paths. It references detailed runner artifacts by path instead of embedding raw
 stdout, stderr, or prompts.
 
+Convert a saved evidence bundle into a benchmark row without reopening runner
+state or raw logs:
+
+```bash
+agenteam-rt benchmark record \
+  --suite path/to/suite.yaml \
+  --results path/to/results.json \
+  --evidence .agenteam/evidence/<id>.json \
+  --task-id <task-id> \
+  --strategy governed_pipeline \
+  --quality-score 0.85
+```
+
+The converter derives execution and recovery metrics from evidence. Quality
+remains an explicit score, and cost is optional when the execution surface does
+not expose it.
+
 When a run has governance activity, `trace`, `status --progress`, `standup`,
 and `evidence` include `governance.adoption`. This compact projection reports
 decision/escalation counts, recorded tripwire warn/block results, gate

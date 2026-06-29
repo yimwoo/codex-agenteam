@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import yaml
 
+EVIDENCE_KIND = "agenteam.run_evidence"
+EVIDENCE_SCHEMA_VERSION = "1"
+TERMINAL_OUTCOMES = {"completed", "failed", "blocked", "stopped"}
+EVIDENCE_COUNT_FIELDS = (
+    "failed_stage_count",
+    "role_attempt_count",
+    "role_failure_count",
+    "verify_attempt_count",
+    "retry_count",
+    "rework_count",
+    "gate_block_count",
+    "artifact_count",
+)
 
-def _fail(message: str) -> None:
+
+def _fail(message: str) -> NoReturn:
     print(json.dumps({"error": message}), file=sys.stderr)
     sys.exit(1)
 
@@ -23,7 +39,7 @@ def _load_file(path_str: str, kind: str) -> tuple[Path, Any]:
 
     suffix = path.suffix.lower()
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             if suffix in {".yaml", ".yml"}:
                 data = yaml.safe_load(f)
             elif suffix == ".json":
@@ -53,8 +69,11 @@ def _require_string_list(
 ) -> list[str]:
     if value is None:
         return []
+    if not isinstance(value, list):
+        errors.append(f"{context}: '{field}' must be a list of non-empty strings")
+        return []
     invalid_items = any(not isinstance(item, str) or not item.strip() for item in value)
-    if not isinstance(value, list) or invalid_items:
+    if invalid_items:
         errors.append(f"{context}: '{field}' must be a list of non-empty strings")
         return []
     normalized = [item.strip() for item in value]
@@ -74,15 +93,129 @@ def _optional_number(
 ) -> float | None:
     if value is None:
         return None
-    if not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         errors.append(f"{context}: '{field}' must be numeric")
         return None
     number = float(value)
+    if not math.isfinite(number):
+        errors.append(f"{context}: '{field}' must be finite")
+        return None
     if minimum is not None and number < minimum:
         errors.append(f"{context}: '{field}' must be >= {minimum}")
     if maximum is not None and number > maximum:
         errors.append(f"{context}: '{field}' must be <= {maximum}")
     return number
+
+
+def _optional_nonnegative_int(
+    value: Any,
+    field: str,
+    errors: list[str],
+    context: str,
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        errors.append(f"{context}: '{field}' must be an integer")
+        return None
+    if value < 0:
+        errors.append(f"{context}: '{field}' must be >= 0")
+    return int(value)
+
+
+def _normalize_evidence_summary(
+    value: Any,
+    errors: list[str],
+    context: str,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{context}: 'evidence' must be a mapping when present")
+        return None
+
+    kind = value.get("kind")
+    if kind != EVIDENCE_KIND:
+        errors.append(f"{context}: evidence.kind must be '{EVIDENCE_KIND}'")
+    schema_version = value.get("schema_version")
+    if schema_version != EVIDENCE_SCHEMA_VERSION:
+        errors.append(f"{context}: evidence.schema_version must be '{EVIDENCE_SCHEMA_VERSION}'")
+    source = value.get("source")
+    if not isinstance(source, str) or not source.strip():
+        errors.append(f"{context}: evidence.source must be a non-empty string")
+
+    final_verify_passed = value.get("final_verify_passed")
+    if final_verify_passed is not None and not isinstance(final_verify_passed, bool):
+        errors.append(f"{context}: evidence.final_verify_passed must be boolean or null")
+
+    normalized = {
+        "kind": kind,
+        "schema_version": schema_version,
+        "source": source.strip() if isinstance(source, str) else source,
+        "final_verify_passed": final_verify_passed,
+    }
+    for field in EVIDENCE_COUNT_FIELDS:
+        normalized[field] = _optional_nonnegative_int(
+            value.get(field, 0),
+            f"evidence.{field}",
+            errors,
+            context,
+        )
+    return normalized
+
+
+def load_run_evidence(path_str: str) -> dict[str, Any]:
+    """Load and validate one portable AgenTeam run evidence object."""
+    path, raw = _load_file(path_str, "run evidence")
+    if not isinstance(raw, dict):
+        _fail(f"Run evidence must contain a top-level mapping: {path}")
+
+    errors: list[str] = []
+    if raw.get("kind") != EVIDENCE_KIND:
+        errors.append(f"evidence: 'kind' must be '{EVIDENCE_KIND}'")
+    if raw.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
+        errors.append(f"evidence: 'schema_version' must be '{EVIDENCE_SCHEMA_VERSION}'")
+
+    run = raw.get("run")
+    outcome = raw.get("outcome")
+    metrics = raw.get("metrics")
+    final_verify = raw.get("final_verify")
+    if not isinstance(run, dict):
+        errors.append("evidence: 'run' must be a mapping")
+        run = {}
+    if not isinstance(outcome, dict):
+        errors.append("evidence: 'outcome' must be a mapping")
+        outcome = {}
+    if not isinstance(metrics, dict):
+        errors.append("evidence: 'metrics' must be a mapping")
+        metrics = {}
+    if not isinstance(final_verify, dict):
+        errors.append("evidence: 'final_verify' must be a mapping")
+        final_verify = {}
+
+    run_id = _require_string(run.get("run_id"), "run.run_id", errors, "evidence")
+    result = _require_string(outcome.get("result"), "outcome.result", errors, "evidence")
+    if result and result not in TERMINAL_OUTCOMES:
+        errors.append(
+            f"evidence: outcome.result must be terminal ({', '.join(sorted(TERMINAL_OUTCOMES))})"
+        )
+    for field in EVIDENCE_COUNT_FIELDS:
+        _optional_nonnegative_int(metrics.get(field, 0), f"metrics.{field}", errors, "evidence")
+    final_verify_passed = final_verify.get("passed")
+    if final_verify_passed is not None and not isinstance(final_verify_passed, bool):
+        errors.append("evidence: final_verify.passed must be boolean or null")
+
+    if errors:
+        _fail("; ".join(errors))
+
+    return {
+        **raw,
+        "path": str(path),
+        "run": {**run, "run_id": run_id},
+        "outcome": {**outcome, "result": result},
+        "metrics": metrics,
+        "final_verify": final_verify,
+    }
 
 
 def load_benchmark_suite(path_str: str) -> dict[str, Any]:
@@ -207,7 +340,7 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
         if status not in {"pending", "recorded"}:
             errors.append(f"{context}: 'status' must be 'pending' or 'recorded'")
 
-        if task_ids and task_id and task_id not in task_ids:
+        if suite is not None and task_ids and task_id and task_id not in task_ids:
             errors.append(f"{context}: unknown task_id '{task_id}' for suite '{suite['suite_id']}'")
         if strategies and strategy and strategy not in set(strategies):
             errors.append(f"{context}: strategy '{strategy}' not declared in results.strategies")
@@ -252,14 +385,19 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
         run_id = run_raw.get("run_id")
         if run_id is not None and not isinstance(run_id, str):
             errors.append(f"{context}: 'run_id' must be a string when present")
+        profile = run_raw.get("profile")
+        if profile is not None and not isinstance(profile, str):
+            errors.append(f"{context}: 'profile' must be a string when present")
+        failure_reason = run_raw.get("failure_reason")
+        if failure_reason is not None and not isinstance(failure_reason, str):
+            errors.append(f"{context}: 'failure_reason' must be a string when present")
+        evidence = _normalize_evidence_summary(run_raw.get("evidence"), errors, context)
 
         if status == "recorded":
             if success is None:
                 errors.append(f"{context}: recorded runs require 'success'")
             if latency_seconds is None:
                 errors.append(f"{context}: recorded runs require 'latency_seconds'")
-            if cost_usd is None:
-                errors.append(f"{context}: recorded runs require 'cost_usd'")
             if quality_score is None:
                 errors.append(f"{context}: recorded runs require 'quality_score'")
 
@@ -275,6 +413,9 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
                 "notes": notes or "",
                 "model": model,
                 "run_id": run_id,
+                "profile": profile,
+                "failure_reason": failure_reason,
+                "evidence": evidence,
             }
         )
 
@@ -300,6 +441,118 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
     }
 
 
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _evidence_latency_seconds(evidence: dict[str, Any]) -> float:
+    run = evidence["run"]
+    elapsed_seconds = run.get("elapsed_seconds")
+    if isinstance(elapsed_seconds, (int, float)) and not isinstance(elapsed_seconds, bool):
+        if elapsed_seconds >= 0:
+            return float(elapsed_seconds)
+
+    started_at = _parse_iso(run.get("started_at"))
+    ended_at = _parse_iso(run.get("completed_at") or run.get("last_update"))
+    if started_at is None or ended_at is None:
+        _fail(
+            "Run evidence needs non-negative run.elapsed_seconds or valid "
+            "run.started_at and terminal timestamps"
+        )
+    try:
+        duration = (ended_at - started_at).total_seconds()
+    except TypeError:
+        _fail("Run evidence timestamps must use compatible timezone-aware values")
+    if duration < 0:
+        _fail("Run evidence terminal timestamp must not precede run.started_at")
+    return duration
+
+
+def build_benchmark_record(
+    evidence: dict[str, Any],
+    *,
+    task_id: str,
+    strategy: str,
+    quality_score: float,
+    cost_usd: float | None = None,
+    model: str | None = None,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Convert validated run evidence into one benchmark result record."""
+    if not math.isfinite(quality_score) or not 0 <= quality_score <= 1:
+        _fail("quality_score must be between 0.0 and 1.0")
+    if cost_usd is not None and (not math.isfinite(cost_usd) or cost_usd < 0):
+        _fail("cost_usd must be >= 0")
+
+    run = evidence["run"]
+    outcome = evidence["outcome"]
+    metrics = evidence["metrics"]
+    final_verify = evidence["final_verify"]
+    success = (
+        outcome.get("result") == "completed"
+        and int(metrics.get("failed_stage_count") or 0) == 0
+        and final_verify.get("passed") is not False
+    )
+    failure_reason = None if success else outcome.get("reason") or "run did not complete"
+
+    evidence_summary = {
+        "kind": evidence["kind"],
+        "schema_version": evidence["schema_version"],
+        "source": evidence["path"],
+        "final_verify_passed": final_verify.get("passed"),
+    }
+    for field in EVIDENCE_COUNT_FIELDS:
+        evidence_summary[field] = int(metrics.get(field) or 0)
+
+    return {
+        "task_id": task_id,
+        "strategy": strategy,
+        "status": "recorded",
+        "success": success,
+        "latency_seconds": _round(_evidence_latency_seconds(evidence)),
+        "cost_usd": cost_usd,
+        "quality_score": quality_score,
+        "notes": notes,
+        "model": model,
+        "run_id": run.get("run_id"),
+        "profile": run.get("profile"),
+        "failure_reason": failure_reason,
+        "evidence": evidence_summary,
+    }
+
+
+def record_benchmark_result(
+    results: dict[str, Any],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace or append one task/strategy row in normalized benchmark results."""
+    pair = (record["task_id"], record["strategy"])
+    runs = []
+    replaced = False
+    for run in results["runs"]:
+        if (run["task_id"], run["strategy"]) == pair:
+            runs.append(record)
+            replaced = True
+        else:
+            runs.append(run)
+    if not replaced:
+        runs.append(record)
+
+    return {
+        "suite_id": results["suite_id"],
+        "generated_at": results.get("generated_at"),
+        "quality_scale": results["quality_scale"],
+        "strategies": results["strategies"],
+        "notes": results.get("notes", ""),
+        "runs": runs,
+    }
+
+
 def _round(value: float) -> float:
     return round(value, 4)
 
@@ -317,11 +570,13 @@ def _build_strategy_summary(
     ]
     cost_values = [run["cost_usd"] for run in recorded if run["cost_usd"] is not None]
     quality_values = [run["quality_score"] for run in recorded if run["quality_score"] is not None]
+    evidence_rows = [run["evidence"] for run in recorded if isinstance(run.get("evidence"), dict)]
 
     run_count = len(recorded)
     return {
         "strategy": strategy,
         "recorded_runs": run_count,
+        "failed_runs": run_count - successes,
         "pending_runs": sum(1 for run in runs if run["status"] == "pending"),
         "task_coverage": _round(task_coverage),
         "success_rate": _round(successes / run_count) if run_count else 0.0,
@@ -333,6 +588,14 @@ def _build_strategy_summary(
         "avg_quality_score": _round(sum(quality_values) / len(quality_values))
         if quality_values
         else None,
+        "evidence_run_count": len(evidence_rows),
+        "final_verify_passed_count": sum(
+            1 for evidence in evidence_rows if evidence.get("final_verify_passed") is True
+        ),
+        **{
+            f"total_{field}": sum(int(evidence.get(field) or 0) for evidence in evidence_rows)
+            for field in EVIDENCE_COUNT_FIELDS
+        },
     }
 
 
@@ -389,6 +652,7 @@ def build_benchmark_report(suite: dict[str, Any], results: dict[str, Any]) -> di
         for category in categories:
             runs = category_pairs.get((strategy, category), [])
             successes = sum(1 for run in runs if run["success"] is True)
+            cost_values = [run["cost_usd"] for run in runs if run["cost_usd"] is not None]
             category_breakdown.append(
                 {
                     "strategy": strategy,
@@ -405,11 +669,8 @@ def build_benchmark_report(suite: dict[str, Any], results: dict[str, Any]) -> di
                     )
                     if runs
                     else None,
-                    "avg_cost_usd": _round(
-                        sum(run["cost_usd"] for run in runs if run["cost_usd"] is not None)
-                        / len(runs)
-                    )
-                    if runs
+                    "avg_cost_usd": _round(sum(cost_values) / len(cost_values))
+                    if cost_values
                     else None,
                     "avg_quality_score": _round(
                         sum(
@@ -488,6 +749,32 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Evidence And Recovery",
+            "",
+            (
+                "| Strategy | Evidence Runs | Failed Runs | Role Attempts | "
+                "Verify Attempts | Retries | Rework | Gate Blocks | Artifacts |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in report["strategies"]:
+        lines.append(
+            "| "
+            f"{row['strategy']} | "
+            f"{row['evidence_run_count']} | "
+            f"{row['failed_runs']} | "
+            f"{row['total_role_attempt_count']} | "
+            f"{row['total_verify_attempt_count']} | "
+            f"{row['total_retry_count']} | "
+            f"{row['total_rework_count']} | "
+            f"{row['total_gate_block_count']} | "
+            f"{row['total_artifact_count']} |"
+        )
+
+    lines.extend(
+        [
+            "",
             "## Category Breakdown",
             "",
             (
@@ -560,8 +847,8 @@ def cmd_benchmark_init_results(args) -> None:
         "strategies": strategies,
         "notes": (
             "Fill in each run entry after executing the task with the named strategy. "
-            "Set status=recorded once success, latency_seconds, cost_usd, and "
-            "quality_score have been collected."
+            "Set status=recorded once success, latency_seconds, and quality_score "
+            "have been collected. Cost is optional when it is not observable."
         ),
         "runs": [
             {
@@ -575,6 +862,9 @@ def cmd_benchmark_init_results(args) -> None:
                 "notes": "",
                 "model": None,
                 "run_id": None,
+                "profile": None,
+                "failure_reason": None,
+                "evidence": None,
             }
             for task in suite["tasks"]
             for strategy in strategies
@@ -584,7 +874,7 @@ def cmd_benchmark_init_results(args) -> None:
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         print(
             json.dumps(
@@ -602,6 +892,49 @@ def cmd_benchmark_init_results(args) -> None:
     print(json.dumps(payload, indent=2))
 
 
+def cmd_benchmark_record(args) -> None:
+    """Convert one run evidence bundle into a benchmark results row."""
+    suite = load_benchmark_suite(args.suite)
+    results = load_benchmark_results(args.results, suite)
+    task_ids = {task["id"] for task in suite["tasks"]}
+    if args.task_id not in task_ids:
+        _fail(f"Unknown task_id '{args.task_id}' for suite '{suite['suite_id']}'")
+    if args.strategy not in results["strategies"]:
+        _fail(f"Strategy '{args.strategy}' not declared in results.strategies")
+
+    evidence = load_run_evidence(args.evidence)
+    record = build_benchmark_record(
+        evidence,
+        task_id=args.task_id,
+        strategy=args.strategy,
+        quality_score=args.quality_score,
+        cost_usd=args.cost_usd,
+        model=args.model,
+        notes=args.notes or "",
+    )
+    payload = record_benchmark_result(results, record)
+    output_path = Path(args.output or args.results)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    print(
+        json.dumps(
+            {
+                "recorded": True,
+                "output_path": str(output_path),
+                "suite_id": suite["suite_id"],
+                "task_id": args.task_id,
+                "strategy": args.strategy,
+                "run_id": record["run_id"],
+                "success": record["success"],
+                "latency_seconds": record["latency_seconds"],
+                "quality_score": record["quality_score"],
+                "cost_usd": record["cost_usd"],
+            }
+        )
+    )
+
+
 def cmd_benchmark_report(args) -> None:
     """Aggregate recorded runs into benchmark summary metrics."""
     suite = load_benchmark_suite(args.suite)
@@ -611,7 +944,7 @@ def cmd_benchmark_report(args) -> None:
     if args.markdown_out:
         markdown_path = Path(args.markdown_out)
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(markdown_path, "w") as f:
+        with open(markdown_path, "w", encoding="utf-8") as f:
             f.write(render_markdown_report(report))
         report["markdown_path"] = str(markdown_path)
 
