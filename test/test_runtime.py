@@ -5892,6 +5892,25 @@ class TestSchemaValidation:
         codes = self._diag_codes(r)
         assert "E003" in codes
 
+    def test_structured_handoffs_accepts_boolean_and_rejects_other_values(self, tmp_path):
+        valid = self._validate(
+            tmp_path,
+            {"version": "2", "structured_handoffs": True, "pipeline": {"stages": []}},
+        )
+        assert valid.returncode == 0, valid.stdout
+
+        invalid = self._validate(
+            tmp_path,
+            {"version": "2", "structured_handoffs": "yes", "pipeline": {"stages": []}},
+        )
+        assert invalid.returncode == 1
+        diagnostic = next(
+            item
+            for item in json.loads(invalid.stdout)["diagnostics"]
+            if item["path"] == "structured_handoffs"
+        )
+        assert diagnostic["code"] == "E021"
+
     def test_current_and_preview_reasoning_efforts_are_accepted(self, tmp_path):
         for effort in ["minimal", "low", "medium", "high", "xhigh", "max"]:
             config = {
@@ -7260,6 +7279,7 @@ class TestRunner:
         fake = tmp_path / "fake-codex"
         fake.write_text(
             """#!/usr/bin/env python3
+import json
 import os
 import sys
 from pathlib import Path
@@ -7273,6 +7293,22 @@ codes = [int(part) for part in os.environ.get("FAKE_CODEX_EXIT_CODES", "0").spli
 code = codes[count] if count < len(codes) else codes[-1]
 count_file.write_text(str(count + 1))
 prompt = sys.stdin.read()
+if "--output-last-message" in sys.argv:
+    output_path = Path(sys.argv[sys.argv.index("--output-last-message") + 1])
+    handoff = os.environ.get("FAKE_CODEX_HANDOFF")
+    write_limit = int(os.environ.get("FAKE_CODEX_HANDOFF_WRITE_LIMIT", "-1"))
+    if handoff != "__missing__" and (write_limit < 0 or count < write_limit):
+        payload = handoff or json.dumps({
+            "status": "completed",
+            "summary": "Completed fake role work.",
+            "artifacts": ["src/example.py"],
+            "verification": [
+                {"command": "pytest -q", "result": "passed", "details": "ok"}
+            ],
+            "findings": [],
+            "recommended_next_stage": "test"
+        })
+        output_path.write_text(payload)
 print('{"type":"turn.completed","prompt_chars":%d}' % len(prompt))
 sys.exit(code)
 """
@@ -7280,12 +7316,17 @@ sys.exit(code)
         fake.chmod(0o755)
         return fake
 
-    def _runner_env(self, tmp_path, exit_codes="0"):
+    def _runner_env(self, tmp_path, exit_codes="0", handoff=None, handoff_write_limit=None):
         count_file = tmp_path / "fake-codex-count.txt"
-        return {
+        env = {
             "FAKE_CODEX_COUNT_FILE": str(count_file),
             "FAKE_CODEX_EXIT_CODES": exit_codes,
         }
+        if handoff is not None:
+            env["FAKE_CODEX_HANDOFF"] = handoff
+        if handoff_write_limit is not None:
+            env["FAKE_CODEX_HANDOFF_WRITE_LIMIT"] = str(handoff_write_limit)
+        return env
 
     def _state_for_single_run(self, tmp_path):
         state_files = list((tmp_path / ".agenteam" / "state").glob("*.json"))
@@ -7352,6 +7393,29 @@ sys.exit(code)
             "--sandbox",
             "read-only",
             "--skip-git-repo-check",
+        ]
+
+    def test_build_codex_exec_command_adds_structured_handoff_paths(self, tmp_path):
+        from runtime.agenteam.runner import _build_codex_exec_command
+
+        schema = tmp_path / "schema.json"
+        output = tmp_path / "handoff.json"
+
+        assert _build_codex_exec_command(
+            "codex",
+            [],
+            output_schema=schema,
+            output_last_message=output,
+        ) == [
+            "codex",
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--output-schema",
+            str(schema),
+            "--output-last-message",
+            str(output),
         ]
 
     def test_run_missing_codex_binary_fails(self, tmp_path):
@@ -7514,6 +7578,271 @@ sys.exit(code)
         assert stdout_events[-1]["type"] == "run_finished"
         state = self._state_for_single_run(tmp_path)
         assert (tmp_path / ".agenteam" / "history" / f"{state['run_id']}.json").exists()
+
+    def test_structured_handoff_is_recorded_and_reused_by_later_roles(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [
+                {"name": "implement", "roles": ["dev"], "gate": "auto"},
+                {"name": "test", "roles": ["qa"], "gate": "auto"},
+            ],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        result = run_rt(
+            "run",
+            "--task",
+            "structured handoff",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert result.returncode == 0, result.stderr
+        state = self._state_for_single_run(tmp_path)
+        implement_handoff = state["stages"]["implement"]["role_handoffs"]["dev"]
+        assert implement_handoff["status"] == "completed"
+        assert len(implement_handoff["sha256"]) == 64
+        assert implement_handoff["path"].endswith("/implement/dev/handoff.json")
+
+        run_root = tmp_path / ".agenteam" / "runs" / state["run_id"]
+        assert (run_root / "implement" / "dev" / "handoff.json").exists()
+        qa_prompt = json.loads((run_root / "test" / "qa" / "prompt-build.json").read_text())
+        assert qa_prompt["structured_handoff"]["enabled"] is True
+        assert qa_prompt["handoffs"]["selected"][0]["role"] == "dev"
+        assert any(section["id"] == "prior_handoffs" for section in qa_prompt["prompt_sections"])
+
+        events = self._events_for_run(tmp_path, state["run_id"])
+        recorded = [event for event in events if event["type"] == "role_handoff_recorded"]
+        assert len(recorded) == 2
+        assert all(len(event["data"]["sha256"]) == 64 for event in recorded)
+
+        trace_result = run_rt("trace", "--run-id", state["run_id"], cwd=str(tmp_path))
+        assert trace_result.returncode == 0, trace_result.stderr
+        trace = json.loads(trace_result.stdout)
+        assert trace["stages"][0]["handoffs"][0]["role"] == "dev"
+
+        evidence_result = run_rt("evidence", "--run-id", state["run_id"], cwd=str(tmp_path))
+        assert evidence_result.returncode == 0, evidence_result.stderr
+        evidence = json.loads(evidence_result.stdout)
+        assert evidence["metrics"]["handoff_count"] == 2
+        assert evidence["metrics"]["invalid_handoff_count"] == 0
+        assert evidence["stages"][0]["handoffs"][0]["role"] == "dev"
+
+    def test_missing_structured_handoff_fails_role_and_records_event(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        result = run_rt(
+            "run",
+            "--task",
+            "missing structured handoff",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, handoff="__missing__"),
+        )
+
+        assert result.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        assert state["status"] == "failed"
+        assert "role_handoffs" not in state["stages"]["implement"]
+        events = self._events_for_run(tmp_path, state["run_id"])
+        invalid = [event for event in events if event["type"] == "role_handoff_invalid"]
+        assert len(invalid) == 1
+        assert "not found" in invalid[0]["data"]["errors"][0]
+
+    def test_noncompleted_structured_handoff_fails_with_valid_provenance(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "review", "roles": ["reviewer"], "gate": "auto"}],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+        handoff = json.dumps(
+            {
+                "status": "blocked",
+                "summary": "A blocking issue remains.",
+                "artifacts": [],
+                "verification": [],
+                "findings": [
+                    {
+                        "severity": "block",
+                        "summary": "Tests fail",
+                        "path": "test/test_runtime.py",
+                        "line": 1,
+                    }
+                ],
+                "recommended_next_stage": "implement",
+            }
+        )
+
+        result = run_rt(
+            "run",
+            "--task",
+            "blocked structured handoff",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, handoff=handoff),
+        )
+
+        assert result.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        provenance = state["stages"]["review"]["role_handoffs"]["reviewer"]
+        assert provenance["status"] == "blocked"
+        assert provenance["finding_count"] == 1
+        events = self._events_for_run(tmp_path, state["run_id"])
+        assert any(event["type"] == "role_handoff_recorded" for event in events)
+        assert not any(event["type"] == "role_handoff_invalid" for event in events)
+
+    def test_structured_handoffs_reject_conflicting_codex_output_args(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        result = run_rt(
+            "run",
+            "--task",
+            "conflicting args",
+            "--codex-bin",
+            str(fake_codex),
+            "--codex-args",
+            "--output-schema custom.json",
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path),
+        )
+
+        assert result.returncode != 0
+        assert "AgenTeam owns --output-schema" in result.stderr
+        assert not (tmp_path / ".agenteam" / "state").exists()
+
+    def test_structured_handoffs_reject_compact_output_arg(self):
+        from runtime.agenteam.runner import _codex_args_set_structured_output
+
+        assert _codex_args_set_structured_output(["-ocustom.json"])
+
+    def test_invalid_structured_handoff_fails_role_with_validation_errors(self, tmp_path):
+        self._write_runner_config(
+            tmp_path,
+            [{"name": "implement", "roles": ["dev"], "gate": "auto"}],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        result = run_rt(
+            "run",
+            "--task",
+            "invalid structured handoff",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, handoff='{"status":"completed"}'),
+        )
+
+        assert result.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        events = self._events_for_run(tmp_path, state["run_id"])
+        invalid = [event for event in events if event["type"] == "role_handoff_invalid"]
+        assert len(invalid) == 1
+        assert "missing required fields" in invalid[0]["data"]["errors"][0]
+        exec_result = json.loads(
+            (
+                tmp_path
+                / ".agenteam"
+                / "runs"
+                / state["run_id"]
+                / "implement"
+                / "dev"
+                / "exec.json"
+            ).read_text()
+        )
+        assert exec_result["handoff"]["valid"] is False
+        assert exec_result["handoff"]["errors"]
+
+    def test_retry_does_not_accept_stale_structured_handoff(self, tmp_path):
+        verify_script = tmp_path / "verify_once.py"
+        verify_count = tmp_path / "verify-count.txt"
+        verify_script.write_text(
+            f"""from pathlib import Path
+path = Path({str(verify_count)!r})
+count = int(path.read_text()) if path.exists() else 0
+path.write_text(str(count + 1))
+raise SystemExit(1 if count == 0 else 0)
+"""
+        )
+        self._write_runner_config(
+            tmp_path,
+            [
+                {
+                    "name": "implement",
+                    "roles": ["dev"],
+                    "gate": "auto",
+                    "verify": f"{sys.executable} {verify_script}",
+                    "max_retries": 1,
+                }
+            ],
+            extra={"structured_handoffs": True},
+        )
+        fake_codex = self._write_fake_codex(tmp_path)
+
+        result = run_rt(
+            "run",
+            "--task",
+            "do not reuse a stale handoff",
+            "--codex-bin",
+            str(fake_codex),
+            cwd=str(tmp_path),
+            env=self._runner_env(tmp_path, handoff_write_limit=1),
+        )
+
+        assert result.returncode != 0
+        state = self._state_for_single_run(tmp_path)
+        assert "role_handoffs" not in state["stages"]["implement"]
+        events = self._events_for_run(tmp_path, state["run_id"])
+        assert sum(1 for event in events if event["type"] == "role_handoff_recorded") == 1
+        assert sum(1 for event in events if event["type"] == "role_handoff_invalid") == 1
+
+    def test_handoff_validation_rejects_paths_outside_repository(self):
+        from runtime.agenteam.handoff import validate_handoff
+
+        errors = validate_handoff(
+            {
+                "status": "completed",
+                "summary": "Done",
+                "artifacts": ["../secret.txt"],
+                "verification": [],
+                "findings": [],
+                "recommended_next_stage": None,
+            }
+        )
+
+        assert errors == ["artifacts must contain only repository-relative paths"]
+
+    def test_handoff_validation_rejects_duplicate_artifacts(self):
+        from runtime.agenteam.handoff import validate_handoff
+
+        errors = validate_handoff(
+            {
+                "status": "completed",
+                "summary": "Done",
+                "artifacts": ["src/example.py", "src/example.py"],
+                "verification": [],
+                "findings": [],
+                "recommended_next_stage": None,
+            }
+        )
+
+        assert errors == ["artifacts must not contain duplicates"]
 
     def test_run_retries_verify_failure_then_completes(self, tmp_path):
         verify_script = tmp_path / "verify_once.py"

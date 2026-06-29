@@ -35,6 +35,7 @@ KNOWN_TOP_LEVEL_KEYS = {
     "final_verify",
     "final_verify_policy",
     "final_verify_max_retries",
+    "structured_handoffs",
     "allow_personal_override",
 }
 

@@ -32,6 +32,7 @@ Everything else is inferred from defaults and auto-detection.
 ```yaml
 version: "2"
 isolation: worktree       # branch (default) | worktree | none
+structured_handoffs: true # require schema-validated role results
 
 roles:
   dev:
@@ -77,6 +78,9 @@ final_verify:
 final_verify_policy: block     # block (default) | warn
 final_verify_max_retries: 1
 
+# Require each runner-managed role to produce a validated handoff.json
+structured_handoffs: true
+
 # Pipeline stages
 pipeline:
   stages:
@@ -116,6 +120,20 @@ pipeline:
 ```
 
 Use profiles with `@ATeam --profile quick fix the typo in README`.
+
+## Structured Role Handoffs
+
+Set `structured_handoffs: true` to make `agenteam-rt run` pass AgenTeam's
+bundled role-handoff schema to `codex exec --output-schema`. Each role writes a
+validated `handoff.json` containing status, summary, repository-relative
+artifacts, verification, findings, and the recommended next stage.
+
+Valid handoffs are hashed and recorded in state, trace, evidence, and later
+role prompts. A missing or invalid handoff fails the role even when Codex exits
+zero. The feature is opt-in; omitted or `false` preserves the existing runner
+behavior. When enabled, do not pass `--output-schema`, `-o`, or
+`--output-last-message` through `--codex-args`, because AgenTeam owns those
+paths.
 
 ## Generated Codex Agents
 

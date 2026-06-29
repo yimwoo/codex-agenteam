@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yimwoo/codex-agenteam/schemas/role-handoff-v1.json",
+  "title": "AgenTeam Role Handoff v1",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["completed", "blocked", "failed"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "minLength": 1},
+          "result": {
+            "type": "string",
+            "enum": ["passed", "failed", "skipped"]
+          },
+          "details": {"type": "string"}
+        },
+        "required": ["command", "result", "details"],
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["block", "warn", "note"]
+          },
+          "summary": {"type": "string", "minLength": 1},
+          "path": {"type": ["string", "null"]},
+          "line": {"type": ["integer", "null"], "minimum": 1}
+        },
+        "required": ["severity", "summary", "path", "line"],
+        "additionalProperties": false
+      }
+    },
+    "recommended_next_stage": {
+      "type": ["string", "null"]
+    }
+  },
+  "required": [
+    "status",
+    "summary",
+    "artifacts",
+    "verification",
+    "findings",
+    "recommended_next_stage"
+  ],
+  "additionalProperties": false
+}

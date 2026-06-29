@@ -183,6 +183,17 @@ def _pass_top_level_enums(config: dict, result: ValidationResult) -> None:
                 )
             )
 
+    structured_handoffs = config.get("structured_handoffs")
+    if structured_handoffs is not None and not isinstance(structured_handoffs, bool):
+        result.diagnostics.append(
+            Diagnostic(
+                Severity.ERROR,
+                "structured_handoffs",
+                "structured_handoffs must be a boolean",
+                "E021",
+            )
+        )
+
 
 # ---------------------------------------------------------------------------
 # Pass 3: Legacy keys

@@ -1,0 +1,120 @@
+suite_id: agenteam-core-v1
+description: >
+  Standardized software-engineering tasks for comparing orchestration strategies
+  in codex-agenteam. Use this suite as a reproducible starting point, then
+  replace the sample results with real runs before publishing claims.
+quality_scale: 0.0-1.0
+tasks:
+  - id: config-override-bugfix
+    title: Preserve personal config overrides in merged validation output
+    category: bugfix
+    difficulty: medium
+    prompt: >
+      Fix a regression where merged config diagnostics fail to show a personal
+      role override. Keep the runtime JSON-only contract intact and add a test.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestValidateCommand -v
+    acceptance:
+      - Runtime shows merged effective values.
+      - No behavior change for non-merged config flows.
+    tags: [runtime, config, validation]
+    timeout_minutes: 30
+  - id: dispatch-scope-guardrail
+    title: Prevent overlapping writer groups from dispatching in parallel
+    category: bugfix
+    difficulty: medium
+    prompt: >
+      Tighten dispatch planning so overlapping write scopes are never placed in
+      the same parallel group, and document the behavior.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestScopedParallelDispatch -v
+    acceptance:
+      - Overlapping writers are separated deterministically.
+      - Read-only participants remain dispatchable.
+    tags: [dispatch, isolation, policy]
+    timeout_minutes: 35
+  - id: benchmark-report-command
+    title: Add a benchmark reporting command to the runtime CLI
+    category: feature
+    difficulty: medium
+    prompt: >
+      Add a CLI entrypoint that aggregates benchmark results into success,
+      latency, cost, and quality metrics, with optional Markdown output.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestBenchmarkCommands -v
+    acceptance:
+      - Results summarize multiple strategies on the same task suite.
+      - The command works without a local agenteam.yaml file.
+    tags: [cli, reporting, benchmark]
+    timeout_minutes: 40
+  - id: resume-history-regression
+    title: Preserve skipped-stage details in resume and history output
+    category: test
+    difficulty: easy
+    prompt: >
+      Add coverage for skipped stages so resume-plan and history output retain
+      the skip reason and do not treat skipped stages as completed work.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestSkippedStatus -v
+    acceptance:
+      - Skipped stages remain excluded from remaining work.
+      - History lessons include skip metadata.
+    tags: [resume, state, history]
+    timeout_minutes: 20
+  - id: run-report-stage-summary
+    title: Include more stage-level metadata in run reports
+    category: feature
+    difficulty: medium
+    prompt: >
+      Extend run-report output with stage timestamps, verify details, and gate
+      decisions in a format that can be consumed by downstream tooling.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestRunReport -v
+    acceptance:
+      - Stage summaries carry enough detail for machine aggregation.
+      - Existing consumers do not need Markdown parsing.
+    tags: [reporting, state, runtime]
+    timeout_minutes: 30
+  - id: docs-benchmark-readme
+    title: Explain how to run and publish benchmark comparisons
+    category: docs
+    difficulty: easy
+    prompt: >
+      Write a contributor-facing benchmark README that defines the methodology,
+      strategy baselines, output metrics, and how to avoid misleading claims.
+    checks:
+      - bats test/smoke.bats
+    acceptance:
+      - README makes the benchmark reproducible.
+      - Methodology and limitations are disclosed clearly.
+    tags: [docs, benchmark, github]
+    timeout_minutes: 25
+  - id: role-template-tuning
+    title: Tune a role template without breaking generated agents
+    category: config
+    difficulty: medium
+    prompt: >
+      Update a built-in role template and keep generated TOML output stable for
+      unaffected roles. Add the minimum tests needed to prevent regressions.
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestTomlGeneration -v
+    acceptance:
+      - Role overrides still merge correctly.
+      - Generated agents remain deterministic.
+    tags: [roles, generation, config]
+    timeout_minutes: 35
+  - id: verify-smoke-isolation
+    title: Keep verification and isolation smoke tests green
+    category: integration
+    difficulty: hard
+    prompt: >
+      Make a pipeline change that preserves worktree or branch isolation while
+      keeping the verify-stage smoke tests passing.
+    checks:
+      - bats test/test_verify_stage.bats
+      - bats test/test_git_isolate.bats
+    acceptance:
+      - Isolation behavior remains intact.
+      - Final verification still blocks bad changes.
+    tags: [integration, verification, isolation]
+    timeout_minutes: 45

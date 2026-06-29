@@ -167,6 +167,22 @@ The converter derives execution and recovery metrics from evidence. Quality
 remains an explicit score, and cost is optional when the execution surface does
 not expose it.
 
+## Structured Role Handoffs
+
+Enable schema-validated role results in config:
+
+```yaml
+structured_handoffs: true
+```
+
+The runner supplies its bundled JSON Schema through `codex exec
+--output-schema` and saves each final role response as
+`.agenteam/runs/<run-id>/<stage>/<role>/handoff.json`. Valid handoffs are
+hashed, recorded as provenance events, surfaced through trace/evidence, and
+included as compact context for later roles. Missing, malformed, or
+non-completed handoffs fail the role; final verification and gates remain
+authoritative.
+
 When a run has governance activity, `trace`, `status --progress`, `standup`,
 and `evidence` include `governance.adoption`. This compact projection reports
 decision/escalation counts, recorded tripwire warn/block results, gate

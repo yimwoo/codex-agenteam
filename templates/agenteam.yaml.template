@@ -13,6 +13,9 @@ final_verify:
 # final_verify_policy: block   # block (default) | warn
 # final_verify_max_retries: 1
 
+# --- Structured role handoffs (Codex output schema, opt-in) ---
+# structured_handoffs: true
+
 # --- Role overrides (deep-merged with built-in defaults) ---
 # Model routing: analysis roles benefit from strong reasoning models,
 # execution roles benefit from fast coding models. Model selection is
