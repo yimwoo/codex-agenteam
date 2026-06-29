@@ -16,6 +16,7 @@ from .dispatch import (
     cmd_roles_show,
     cmd_scope_audit,
 )
+from .doctor import cmd_doctor
 from .events import cmd_event_append, cmd_event_list, cmd_event_tail
 from .evidence import cmd_evidence
 from .export import cmd_export_workspace_agent
@@ -69,6 +70,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     # generate
     sub.add_parser("generate", help="Generate .codex/agents/*.toml")
+
+    # doctor
+    p_doctor = sub.add_parser("doctor", help="Diagnose local Codex compatibility")
+    p_doctor.add_argument("--codex-bin", default="codex", help="Codex binary to inspect")
+    p_doctor.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=5.0,
+        help="Timeout for each local Codex diagnostic command",
+    )
+    p_doctor.add_argument(
+        "--strict",
+        action="store_true",
+        default=False,
+        help="Exit 1 when diagnostics contain warnings or errors",
+    )
 
     # validate
     p_validate = sub.add_parser("validate", help="Validate config without creating run state")
@@ -378,6 +395,11 @@ def main() -> None:
     if not args.command:
         parser.print_help()
         sys.exit(0)
+
+    # Doctor can inspect Codex with or without project config.
+    if args.command == "doctor":
+        cmd_doctor(args)
+        return
 
     # HOTL check doesn't need config
     if args.command == "hotl":

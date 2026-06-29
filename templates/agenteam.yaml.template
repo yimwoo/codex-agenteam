@@ -17,6 +17,9 @@ final_verify:
 # Model routing: analysis roles benefit from strong reasoning models,
 # execution roles benefit from fast coding models. Model selection is
 # a personal override (share-config strips it from team config).
+# Run `agenteam-rt doctor` to detect deprecated local pins. Reasoning effort
+# values are minimal, low, medium, high, xhigh, and preview max; actual support
+# depends on the selected model.
 #
 # Analysis roles (uncomment in personal config):
 #   researcher:
