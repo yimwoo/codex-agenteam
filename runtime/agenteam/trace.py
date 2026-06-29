@@ -237,6 +237,14 @@ def _stage_trace(run_id: str, stage_name: str, stage_state: dict, events: list[d
     if artifacts:
         entry["artifacts"] = artifacts
 
+    role_handoffs = stage_state.get("role_handoffs")
+    if isinstance(role_handoffs, dict):
+        entry["handoffs"] = [
+            role_handoffs[role]
+            for role in sorted(role_handoffs)
+            if isinstance(role_handoffs[role], dict)
+        ]
+
     next_action = _stage_next_action(run_id, stage_name, stage_state)
     if next_action:
         entry["next_action"] = next_action

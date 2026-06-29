@@ -15,6 +15,8 @@ EVENT_TYPES: dict[str, list[str]] = {
     "stage_resumed": ["verify_result", "action"],
     "role_started": ["role"],
     "role_finished": ["role", "exit_code"],
+    "role_handoff_recorded": ["role", "path", "sha256", "status"],
+    "role_handoff_invalid": ["role", "errors"],
     "runner_retry": ["attempt", "max_retries"],
     "runner_rework": ["rework_to"],
     "final_verify_started": ["command", "attempt"],
@@ -31,6 +33,8 @@ _STAGE_EVENTS = {
     "stage_resumed",
     "role_started",
     "role_finished",
+    "role_handoff_recorded",
+    "role_handoff_invalid",
     "runner_retry",
     "runner_rework",
 }

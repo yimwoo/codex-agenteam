@@ -62,6 +62,7 @@ def _stage_evidence(stage: dict) -> dict:
         "gate",
         "failure",
         "artifacts",
+        "handoffs",
     ):
         if field in stage:
             entry[field] = stage[field]
@@ -214,6 +215,14 @@ def _metrics_from_trace(trace: dict, events: list[dict], role_exits: list[dict])
         "rework_count": sum(1 for event in events if event.get("type") == "runner_rework"),
         "gate_block_count": gate_block_count,
         "artifact_count": artifact_count,
+        "handoff_count": sum(
+            len(stage.get("handoffs", []))
+            for stage in stages
+            if isinstance(stage.get("handoffs"), list)
+        ),
+        "invalid_handoff_count": sum(
+            1 for event in events if event.get("type") == "role_handoff_invalid"
+        ),
     }
 
 

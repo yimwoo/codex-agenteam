@@ -24,6 +24,8 @@ EVIDENCE_COUNT_FIELDS = (
     "rework_count",
     "gate_block_count",
     "artifact_count",
+    "handoff_count",
+    "invalid_handoff_count",
 )
 
 
@@ -753,9 +755,10 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             "",
             (
                 "| Strategy | Evidence Runs | Failed Runs | Role Attempts | "
-                "Verify Attempts | Retries | Rework | Gate Blocks | Artifacts |"
+                "Verify Attempts | Retries | Rework | Gate Blocks | Handoffs | "
+                "Invalid Handoffs | Artifacts |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in report["strategies"]:
@@ -769,6 +772,8 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"{row['total_retry_count']} | "
             f"{row['total_rework_count']} | "
             f"{row['total_gate_block_count']} | "
+            f"{row['total_handoff_count']} | "
+            f"{row['total_invalid_handoff_count']} | "
             f"{row['total_artifact_count']} |"
         )
 

@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from .events import append_event
+from .handoff import HANDOFF_SCHEMA_PATH, build_handoff_provenance, load_handoff
 from .prompt import build_prompt
 from .report import _build_run_summary, _extract_lessons
 from .state import (
@@ -18,6 +19,8 @@ from .transitions import transition
 from .verify import detect_verify_command
 
 DEFAULT_CODEX_SANDBOX = "workspace-write"
+INVALID_HANDOFF_EXIT_CODE = -3
+NONCOMPLETED_HANDOFF_EXIT_CODE = -4
 
 
 def _now_iso() -> str:
@@ -88,12 +91,34 @@ def _codex_args_set_sandbox(codex_args: list[str]) -> bool:
     return False
 
 
-def _build_codex_exec_command(codex_bin: str, codex_args: list[str]) -> list[str]:
+def _codex_args_set_structured_output(codex_args: list[str]) -> bool:
+    """Return True when passthrough args control AgenTeam-owned output files."""
+    output_flags = {"--output-schema", "--output-last-message", "-o"}
+    return any(
+        token in output_flags
+        or token.startswith("--output-schema=")
+        or token.startswith("--output-last-message=")
+        or (token.startswith("-o") and not token.startswith("--"))
+        for token in codex_args
+    )
+
+
+def _build_codex_exec_command(
+    codex_bin: str,
+    codex_args: list[str],
+    *,
+    output_schema: Path | None = None,
+    output_last_message: Path | None = None,
+) -> list[str]:
     """Build the codex exec command using current explicit sandbox flags."""
     cmd = [codex_bin, "exec", "--json"]
     if not _codex_args_set_sandbox(codex_args):
         cmd.extend(["--sandbox", DEFAULT_CODEX_SANDBOX])
     cmd.extend(codex_args)
+    if output_schema is not None:
+        cmd.extend(["--output-schema", str(output_schema)])
+    if output_last_message is not None:
+        cmd.extend(["--output-last-message", str(output_last_message)])
     return cmd
 
 
@@ -195,6 +220,34 @@ def _record_role_artifacts(run_id: str, stage: str, role_name: str, paths: list[
     _save_state(run_id, state)
 
 
+def _record_role_handoff(run_id: str, stage: str, role_name: str, provenance: dict) -> None:
+    """Persist compact validated handoff provenance in stage state."""
+    state = _load_state(run_id)
+    stage_state = state.get("stages", {}).get(stage)
+    if stage_state is None:
+        return
+    role_handoffs = stage_state.setdefault("role_handoffs", {})
+    role_handoffs[role_name] = {"role": role_name, **provenance}
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+
+
+def _clear_role_handoff(run_id: str, stage: str, role_name: str) -> None:
+    """Remove provenance from an earlier attempt of the same role."""
+    state = _load_state(run_id)
+    stage_state = state.get("stages", {}).get(stage)
+    if stage_state is None:
+        return
+    role_handoffs = stage_state.get("role_handoffs")
+    if not isinstance(role_handoffs, dict) or role_name not in role_handoffs:
+        return
+    role_handoffs.pop(role_name)
+    if not role_handoffs:
+        stage_state.pop("role_handoffs")
+    state["last_update"] = _now_iso()
+    _save_state(run_id, state)
+
+
 def _persist_history(run_id: str) -> None:
     """Persist run history without printing into the runner JSONL stream."""
     summary = _build_run_summary(run_id)
@@ -273,6 +326,7 @@ def _run_role(
     """Dispatch a single role via codex exec. Returns exec result dict."""
     role_dir = output_dir / stage / role_name
     role_dir.mkdir(parents=True, exist_ok=True)
+    structured_handoffs = config.get("structured_handoffs") is True
 
     # Build prompt
     prompt_data = build_prompt(run_id, stage, role_name, config)
@@ -283,6 +337,11 @@ def _run_role(
     stdout_path = role_dir / "stdout.txt"
     stderr_path = role_dir / "stderr.txt"
     exec_path = role_dir / "exec.json"
+    handoff_path = role_dir / "handoff.json"
+
+    if structured_handoffs:
+        _clear_role_handoff(run_id, stage, role_name)
+        handoff_path.unlink(missing_ok=True)
 
     # Write audit files
     prompt_path.write_text(prompt_text)
@@ -295,7 +354,12 @@ def _run_role(
     append_event(run_id, "role_started", stage, {"role": role_name})
 
     start = time.time()
-    cmd = _build_codex_exec_command(codex_bin, codex_args)
+    cmd = _build_codex_exec_command(
+        codex_bin,
+        codex_args,
+        output_schema=HANDOFF_SCHEMA_PATH if structured_handoffs else None,
+        output_last_message=handoff_path if structured_handoffs else None,
+    )
 
     try:
         proc = subprocess.run(  # noqa: S603
@@ -321,8 +385,53 @@ def _run_role(
     duration = round(time.time() - start, 1)
 
     # Write output files
-    stdout_path.write_text(stdout)
-    stderr_path.write_text(stderr)
+    stdout_path.write_text(stdout, encoding="utf-8")
+
+    handoff_provenance = None
+    handoff_errors: list[str] = []
+    if structured_handoffs and exit_code == 0:
+        handoff_payload, handoff_errors = load_handoff(handoff_path)
+        if handoff_errors or handoff_payload is None:
+            exit_code = INVALID_HANDOFF_EXIT_CODE
+            message = "Invalid structured handoff: " + "; ".join(handoff_errors)
+            stderr = "\n".join(part for part in (stderr, message) if part)
+            event_data = {"role": role_name, "errors": handoff_errors}
+            _emit_event(
+                {
+                    "type": "role_handoff_invalid",
+                    "stage": stage,
+                    **event_data,
+                    "ts": _now_iso(),
+                },
+                events_file,
+            )
+            append_event(run_id, "role_handoff_invalid", stage, event_data)
+        else:
+            handoff_provenance = build_handoff_provenance(
+                handoff_path,
+                handoff_payload,
+                _display_path(handoff_path),
+            )
+            _record_role_handoff(run_id, stage, role_name, handoff_provenance)
+            event_data = {"role": role_name, **handoff_provenance}
+            _emit_event(
+                {
+                    "type": "role_handoff_recorded",
+                    "stage": stage,
+                    **event_data,
+                    "ts": _now_iso(),
+                },
+                events_file,
+            )
+            append_event(run_id, "role_handoff_recorded", stage, event_data)
+            if handoff_payload["status"] != "completed":
+                exit_code = NONCOMPLETED_HANDOFF_EXIT_CODE
+                message = (
+                    f"Structured handoff reported non-completed status: {handoff_payload['status']}"
+                )
+                stderr = "\n".join(part for part in (stderr, message) if part)
+
+    stderr_path.write_text(stderr, encoding="utf-8")
 
     exec_result = {
         "exit_code": exit_code,
@@ -331,12 +440,22 @@ def _run_role(
         "stage": stage,
         "role": role_name,
     }
-    exec_path.write_text(json.dumps(exec_result, indent=2))
+    if structured_handoffs:
+        exec_result["handoff"] = {
+            "required": True,
+            "valid": handoff_provenance is not None,
+            "errors": handoff_errors,
+            "provenance": handoff_provenance,
+        }
+    exec_path.write_text(json.dumps(exec_result, indent=2), encoding="utf-8")
+    artifact_paths = [prompt_path, prompt_build_path, stdout_path, stderr_path, exec_path]
+    if handoff_path.exists():
+        artifact_paths.append(handoff_path)
     _record_role_artifacts(
         run_id,
         stage,
         role_name,
-        [prompt_path, prompt_build_path, stdout_path, stderr_path, exec_path],
+        artifact_paths,
     )
 
     _emit_event(
@@ -346,6 +465,7 @@ def _run_role(
             "role": role_name,
             "exit_code": exit_code,
             "duration_s": duration,
+            "handoff_status": handoff_provenance.get("status") if handoff_provenance else None,
             "ts": _now_iso(),
         },
         events_file,
@@ -354,7 +474,12 @@ def _run_role(
         run_id,
         "role_finished",
         stage,
-        {"role": role_name, "exit_code": exit_code, "duration_s": duration},
+        {
+            "role": role_name,
+            "exit_code": exit_code,
+            "duration_s": duration,
+            "handoff_status": handoff_provenance.get("status") if handoff_provenance else None,
+        },
     )
 
     return exec_result
@@ -504,9 +629,29 @@ def cmd_run(args, config: dict) -> None:
     codex_args = _parse_codex_args(codex_args_str)
     auto_approve = getattr(args, "auto_approve_gates", False)
     output_dir_arg = getattr(args, "output_dir", None)
+    structured_handoffs = config.get("structured_handoffs") is True
 
     # Prerequisites
     _check_codex_binary(codex_bin)
+    if structured_handoffs and _codex_args_set_structured_output(codex_args):
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        "AgenTeam owns --output-schema and --output-last-message when "
+                        "structured_handoffs is enabled"
+                    )
+                }
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if structured_handoffs and not HANDOFF_SCHEMA_PATH.exists():
+        print(
+            json.dumps({"error": f"Structured handoff schema not found: {HANDOFF_SCHEMA_PATH}"}),
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Bootstrap
     run_id = _bootstrap(args, config)

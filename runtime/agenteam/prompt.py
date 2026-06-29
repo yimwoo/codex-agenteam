@@ -8,6 +8,8 @@ from pathlib import Path
 from .artifacts import resolve_artifact_paths_for_config
 from .config import resolve_team_config
 from .generate import build_developer_instructions
+from .handoff import HANDOFF_SCHEMA_PATH
+from .handoff import SCHEMA_VERSION as HANDOFF_SCHEMA_VERSION
 from .roles import resolve_roles
 
 SCHEMA_VERSION = "1"
@@ -121,6 +123,43 @@ def _find_prior_artifacts(run_id: str, config: dict) -> dict:
     }
 
 
+def _find_prior_handoffs(run_id: str, stage: str, role_name: str) -> list[dict]:
+    """Return validated handoff summaries recorded before the current role."""
+    state_path = Path.cwd() / ".agenteam" / "state" / f"{run_id}.json"
+    if not state_path.exists():
+        return []
+    with open(state_path, encoding="utf-8") as handle:
+        state = json.load(handle)
+
+    stage_order = state.get("stage_order", list(state.get("stages", {}).keys()))
+    stages = state.get("stages", {})
+    selected: list[dict] = []
+    for stage_name in stage_order:
+        stage_state = stages.get(stage_name, {})
+        handoffs = stage_state.get("role_handoffs", {})
+        if isinstance(handoffs, dict):
+            for recorded_role in sorted(handoffs):
+                if stage_name == stage and recorded_role == role_name:
+                    continue
+                handoff = handoffs[recorded_role]
+                if not isinstance(handoff, dict) or not handoff.get("path"):
+                    continue
+                selected.append(
+                    {
+                        "stage": stage_name,
+                        "role": recorded_role,
+                        "status": handoff.get("status"),
+                        "summary": handoff.get("summary", ""),
+                        "path": handoff.get("path"),
+                        "sha256": handoff.get("sha256"),
+                        "recommended_next_stage": handoff.get("recommended_next_stage"),
+                    }
+                )
+        if stage_name == stage:
+            break
+    return selected
+
+
 def _build_role_context(run_id: str, stage: str, role_name: str, config: dict) -> str:
     """Build the dispatch context block for a role."""
     from .state import resolve_stages_for_run
@@ -189,6 +228,9 @@ def build_prompt(run_id: str, stage: str, role_name: str, config: dict) -> dict:
     # Prior artifacts (best-effort)
     artifacts = _find_prior_artifacts(run_id, config)
 
+    # Validated handoffs recorded by earlier roles/stages
+    handoffs = _find_prior_handoffs(run_id, stage, role_name)
+
     # Role context (dispatch info)
     role_context = _build_role_context(run_id, stage, role_name, config)
 
@@ -237,6 +279,17 @@ def build_prompt(run_id: str, stage: str, role_name: str, config: dict) -> dict:
             lines.append(f"- {a['role']}: {a['path']} ({a['kind']})")
         artifact_text = "\n".join(lines)
 
+    handoff_text = ""
+    if handoffs:
+        lines = ["## Prior Structured Handoffs", ""]
+        for item in handoffs:
+            next_stage = item.get("recommended_next_stage") or "unspecified"
+            lines.append(
+                f"- {item['stage']}/{item['role']} [{item['status']}]: "
+                f"{item['summary']} (artifact: {item['path']}; next: {next_stage})"
+            )
+        handoff_text = "\n".join(lines)
+
     # HOTL injection text
     hotl_text = ""
     if hotl["eligible"]:
@@ -252,9 +305,25 @@ def build_prompt(run_id: str, stage: str, role_name: str, config: dict) -> dict:
     ]
     if artifact_text:
         prompt_sections.append({"id": "prior_artifacts", "text": artifact_text})
+    if handoff_text:
+        prompt_sections.append({"id": "prior_handoffs", "text": handoff_text})
     prompt_sections.append({"id": "role_context", "text": role_context})
     if hotl_text:
         prompt_sections.append({"id": "hotl_injection", "text": hotl_text})
+    structured_handoff = config.get("structured_handoffs") is True
+    if structured_handoff:
+        prompt_sections.append(
+            {
+                "id": "structured_handoff",
+                "text": (
+                    "## Structured Handoff\n\n"
+                    "Your final response must satisfy the AgenTeam role handoff schema. "
+                    "Report status, a concise summary, repository-relative artifacts, "
+                    "verification performed, structured findings, and the recommended "
+                    "next stage. Do not add fields outside the schema."
+                ),
+            }
+        )
 
     # Compose prompt
     prompt = "\n\n".join(s["text"] for s in prompt_sections if s["text"])
@@ -276,6 +345,12 @@ def build_prompt(run_id: str, stage: str, role_name: str, config: dict) -> dict:
         },
         "verification": verification,
         "artifacts": artifacts,
+        "handoffs": {"selected": handoffs},
+        "structured_handoff": {
+            "enabled": structured_handoff,
+            "schema_version": HANDOFF_SCHEMA_VERSION if structured_handoff else None,
+            "schema_path": str(HANDOFF_SCHEMA_PATH) if structured_handoff else None,
+        },
         "hotl": hotl,
         "dispatch_context": dispatch_context,
         "prompt_sections": prompt_sections,
