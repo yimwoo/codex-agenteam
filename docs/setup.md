@@ -42,10 +42,12 @@ Check the local Codex/runtime compatibility after installation:
 agenteam-rt doctor
 ```
 
-The command reports the Codex version, relevant local feature stages, effective
-role model pins, and deprecation warnings. It does not require an AgenTeam
-config. Use `agenteam-rt doctor --strict` in CI when warnings should fail the
-check.
+The command reports the Codex version, relevant local feature stages,
+structured-output support, hook availability, effective role model pins, and
+deprecation warnings. It does not require an AgenTeam config. When
+`structured_handoffs: true`, doctor treats missing `--output-schema` or
+`--output-last-message` support as a readiness error. Use
+`agenteam-rt doctor --strict` in CI when warnings should also fail the check.
 
 If the role picker still does not show the new roles, confirm the project now
 contains `.codex/agents/*.toml`, then open a new thread or restart Codex so it

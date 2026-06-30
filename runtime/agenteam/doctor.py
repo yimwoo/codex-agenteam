@@ -59,6 +59,35 @@ def _parse_features(output: str) -> dict[str, dict[str, Any]]:
     return features
 
 
+def _empty_capabilities() -> dict[str, dict[str, Any]]:
+    """Return the stable capability-report shape before discovery."""
+    return {
+        "structured_output": {
+            "available": False,
+            "output_schema": False,
+            "output_last_message": False,
+            "source": "codex exec --help",
+        },
+        "hooks": {
+            "reported": False,
+            "stage": None,
+            "enabled": None,
+            "source": "codex features list",
+        },
+    }
+
+
+def _parse_exec_capabilities(output: str) -> dict[str, bool]:
+    """Extract structured-output support from `codex exec --help`."""
+    output_schema = "--output-schema" in output
+    output_last_message = "--output-last-message" in output
+    return {
+        "available": output_schema and output_last_message,
+        "output_schema": output_schema,
+        "output_last_message": output_last_message,
+    }
+
+
 def _run_codex(
     binary: str,
     command: list[str],
@@ -78,8 +107,9 @@ def _inspect_codex(
     requested_binary: str,
     timeout_seconds: float,
     diagnostics: list[dict],
-) -> tuple[dict, dict[str, dict[str, Any]]]:
+) -> tuple[dict, dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     resolved_binary = shutil.which(requested_binary)
+    capabilities = _empty_capabilities()
     codex = {
         "available": resolved_binary is not None,
         "requested_binary": requested_binary,
@@ -95,7 +125,7 @@ def _inspect_codex(
                 "codex.binary",
             )
         )
-        return codex, {}
+        return codex, {}, capabilities
 
     try:
         version_result = _run_codex(resolved_binary, ["--version"], timeout_seconds)
@@ -108,7 +138,7 @@ def _inspect_codex(
                 "codex.version",
             )
         )
-        return codex, {}
+        return codex, {}, capabilities
     except OSError as exc:
         diagnostics.append(
             _diagnostic(
@@ -118,7 +148,7 @@ def _inspect_codex(
                 "codex.version",
             )
         )
-        return codex, {}
+        return codex, {}, capabilities
 
     version_output = "\n".join(
         part.strip() for part in (version_result.stdout, version_result.stderr) if part.strip()
@@ -133,8 +163,9 @@ def _inspect_codex(
                 "codex.version",
             )
         )
-        return codex, {}
+        return codex, {}, capabilities
 
+    features: dict[str, dict[str, Any]] = {}
     try:
         feature_result = _run_codex(resolved_binary, ["features", "list"], timeout_seconds)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -146,32 +177,74 @@ def _inspect_codex(
                 "codex.features",
             )
         )
-        return codex, {}
+    else:
+        features = _parse_features(feature_result.stdout) if feature_result.returncode == 0 else {}
+        if feature_result.returncode != 0:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "D003",
+                    "Codex feature discovery returned a non-zero exit code.",
+                    "codex.features",
+                )
+            )
+        elif not features:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "D003",
+                    "Codex feature discovery returned no recognized AgenTeam capabilities.",
+                    "codex.features",
+                )
+            )
 
-    features = _parse_features(feature_result.stdout) if feature_result.returncode == 0 else {}
-    if feature_result.returncode != 0:
+    hooks = features.get("hooks")
+    if hooks is not None:
+        capabilities["hooks"].update(
+            {
+                "reported": True,
+                "stage": hooks.get("stage"),
+                "enabled": hooks.get("enabled"),
+            }
+        )
+
+    try:
+        exec_help_result = _run_codex(resolved_binary, ["exec", "--help"], timeout_seconds)
+    except (OSError, subprocess.TimeoutExpired) as exc:
         diagnostics.append(
             _diagnostic(
                 "warning",
-                "D003",
-                "Codex feature discovery returned a non-zero exit code.",
-                "codex.features",
+                "D006",
+                f"Codex exec capability discovery was unavailable: {exc}.",
+                "codex.capabilities.structured_output",
             )
         )
-    elif not features:
-        diagnostics.append(
-            _diagnostic(
-                "warning",
-                "D003",
-                "Codex feature discovery returned no recognized AgenTeam capabilities.",
-                "codex.features",
+    else:
+        if exec_help_result.returncode != 0:
+            diagnostics.append(
+                _diagnostic(
+                    "warning",
+                    "D006",
+                    "Codex exec capability discovery returned a non-zero exit code.",
+                    "codex.capabilities.structured_output",
+                )
             )
-        )
-    return codex, features
+        else:
+            exec_help_output = "\n".join(
+                part for part in (exec_help_result.stdout, exec_help_result.stderr) if part
+            )
+            capabilities["structured_output"].update(_parse_exec_capabilities(exec_help_output))
+
+    return codex, features, capabilities
 
 
 def _inspect_config(config_arg: str | None, diagnostics: list[dict]) -> dict:
-    config_info: dict[str, Any] = {"found": False, "path": None, "model_pins": []}
+    config_info: dict[str, Any] = {
+        "found": False,
+        "path": None,
+        "model_pins": [],
+        "structured_handoffs": False,
+    }
     try:
         config_path = find_config(config_arg)
     except FileNotFoundError as exc:
@@ -192,6 +265,8 @@ def _inspect_config(config_arg: str | None, diagnostics: list[dict]) -> dict:
             _diagnostic("error", "D004", f"Failed to inspect AgenTeam config: {exc}.", "config")
         )
         return config_info
+
+    config_info["structured_handoffs"] = config.get("structured_handoffs") is True
 
     model_pins = []
     for role_name in sorted(roles):
@@ -215,6 +290,46 @@ def _inspect_config(config_arg: str | None, diagnostics: list[dict]) -> dict:
     return config_info
 
 
+def _apply_capability_diagnostics(
+    capabilities: dict[str, dict[str, Any]],
+    config: dict,
+    diagnostics: list[dict],
+) -> None:
+    """Relate discovered Codex capabilities to enabled AgenTeam features."""
+    structured_output = capabilities["structured_output"]
+    if config.get("structured_handoffs") is True:
+        if not structured_output["output_schema"]:
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "D007",
+                    "structured_handoffs requires Codex exec --output-schema support.",
+                    "codex.capabilities.structured_output.output_schema",
+                )
+            )
+        if not structured_output["output_last_message"]:
+            diagnostics.append(
+                _diagnostic(
+                    "error",
+                    "D008",
+                    "structured_handoffs requires Codex exec --output-last-message support.",
+                    "codex.capabilities.structured_output.output_last_message",
+                )
+            )
+
+    hooks = capabilities["hooks"]
+    if hooks["reported"] and hooks["enabled"] is False:
+        diagnostics.append(
+            _diagnostic(
+                "info",
+                "D009",
+                "Codex lifecycle hooks are disabled; future AgenTeam hook integrations will be "
+                "unavailable, but current runtime verification remains authoritative.",
+                "codex.capabilities.hooks",
+            )
+        )
+
+
 def build_doctor_report(
     *,
     codex_bin: str,
@@ -223,14 +338,16 @@ def build_doctor_report(
 ) -> dict:
     """Build a side-effect-free local Codex compatibility report."""
     diagnostics: list[dict] = []
-    codex, features = _inspect_codex(codex_bin, timeout_seconds, diagnostics)
+    codex, features, capabilities = _inspect_codex(codex_bin, timeout_seconds, diagnostics)
     config = _inspect_config(config_arg, diagnostics)
+    _apply_capability_diagnostics(capabilities, config, diagnostics)
     has_error = any(item["severity"] == "error" for item in diagnostics)
     return {
         "schema_version": SCHEMA_VERSION,
         "ready": codex["available"] and codex["version"] is not None and not has_error,
         "codex": codex,
         "features": features,
+        "capabilities": capabilities,
         "config": config,
         "diagnostics": diagnostics,
     }
