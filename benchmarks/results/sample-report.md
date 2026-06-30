@@ -10,6 +10,23 @@ Standardized software-engineering tasks for comparing orchestration strategies i
 - Pending or missing runs: 0
 - Quality scale: 0.0-1.0
 
+## Reproducibility And Decision Readiness
+
+- Suite SHA-256: `ef16cbc74b86d750d28efcfc4c4a2a95b29c176eb780662911e93d2ea25be997`
+- Complete execution metadata: 0 / 24 recorded runs
+- Evidence SHA-256 coverage: 0 / 0 evidence-backed runs
+- Ready for executor decision: **no**
+
+| Strategy | Model | Reasoning Effort | Codex Version | Repo Commit | Complete | Stable |
+| --- | --- | --- | --- | --- | --- | --- |
+| single_agent | gpt-5.2 | n/a | n/a | n/a | no | yes |
+| minimal_team | gpt-5.3-codex | n/a | n/a | n/a | no | yes |
+| full_pipeline | gpt-5.3-codex | n/a | n/a | n/a | no | yes |
+
+Decision-readiness issues:
+
+- `missing_execution_metadata`: Recorded runs are missing required reproducibility metadata.
+
 ## Strategy Comparison
 
 | Rank | Strategy | Success Rate | Avg Quality | Avg Latency (s) | Avg Cost ($) | Coverage |

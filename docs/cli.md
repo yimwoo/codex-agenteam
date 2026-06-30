@@ -99,12 +99,15 @@ agenteam-rt evidence --run-id <id> --output .agenteam/evidence/<id>.json
 
 # Create, populate, and report an evidence-backed benchmark matrix
 agenteam-rt benchmark init-results --suite path/to/suite.yaml \
-  --strategy single_agent --strategy minimal_team \
-  --strategy governed_pipeline --output path/to/results.json
+  --strategy single_agent --strategy sol_high_effort \
+  --strategy minimal_team --strategy governed_pipeline \
+  --output path/to/results.json
 agenteam-rt benchmark record --suite path/to/suite.yaml \
   --results path/to/results.json \
   --evidence .agenteam/evidence/<id>.json \
-  --task-id <task-id> --strategy minimal_team --quality-score 0.85
+  --task-id <task-id> --strategy minimal_team --quality-score 0.85 \
+  --model <exact-model-id> --reasoning-effort <accepted-value> \
+  --codex-version <exact-version> --repo-commit <git-sha>
 agenteam-rt benchmark report --suite path/to/suite.yaml \
   --results path/to/results.json --markdown-out path/to/report.md
 

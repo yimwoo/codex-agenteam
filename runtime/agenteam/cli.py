@@ -190,6 +190,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_benchmark_record.add_argument("--cost-usd", dest="cost_usd", type=float, default=None)
     p_benchmark_record.add_argument("--model", default=None)
+    p_benchmark_record.add_argument(
+        "--reasoning-effort",
+        dest="reasoning_effort",
+        default=None,
+        help="Exact reasoning-effort value accepted by the tested Codex build",
+    )
+    p_benchmark_record.add_argument(
+        "--codex-version",
+        dest="codex_version",
+        default=None,
+        help="Exact Codex version used for this run",
+    )
+    p_benchmark_record.add_argument(
+        "--repo-commit",
+        dest="repo_commit",
+        default=None,
+        help="Repository commit tested by this run",
+    )
     p_benchmark_record.add_argument("--notes", default="")
     p_benchmark_record.add_argument(
         "--output",

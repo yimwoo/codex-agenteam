@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import re
 import sys
 import time
 from datetime import datetime
@@ -27,6 +29,15 @@ EVIDENCE_COUNT_FIELDS = (
     "handoff_count",
     "invalid_handoff_count",
 )
+REPRODUCIBILITY_FIELDS = (
+    "model",
+    "reasoning_effort",
+    "codex_version",
+    "repo_commit",
+)
+SHARED_ENVIRONMENT_FIELDS = ("codex_version", "repo_commit")
+HEX_REVISION_PATTERN = re.compile(r"^[0-9a-fA-F]{7,64}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def _fail(message: str) -> NoReturn:
@@ -54,11 +65,46 @@ def _load_file(path_str: str, kind: str) -> tuple[Path, Any]:
     return path, data
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as e:
+        _fail(f"Failed to hash file {path}: {e}")
+    return digest.hexdigest()
+
+
 def _require_string(value: Any, field: str, errors: list[str], context: str) -> str:
     if not isinstance(value, str) or not value.strip():
         errors.append(f"{context}: '{field}' must be a non-empty string")
         return ""
     return value.strip()
+
+
+def _optional_string(value: Any, field: str, errors: list[str], context: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{context}: '{field}' must be a non-empty string when present")
+        return None
+    return value.strip()
+
+
+def _optional_hex_value(
+    value: Any,
+    field: str,
+    errors: list[str],
+    context: str,
+    *,
+    pattern: re.Pattern[str],
+    description: str,
+) -> str | None:
+    normalized = _optional_string(value, field, errors, context)
+    if normalized is not None and not pattern.fullmatch(normalized):
+        errors.append(f"{context}: {field} must be {description}")
+    return normalized
 
 
 def _require_string_list(
@@ -145,6 +191,14 @@ def _normalize_evidence_summary(
     source = value.get("source")
     if not isinstance(source, str) or not source.strip():
         errors.append(f"{context}: evidence.source must be a non-empty string")
+    sha256 = _optional_hex_value(
+        value.get("sha256"),
+        "evidence.sha256",
+        errors,
+        context,
+        pattern=SHA256_PATTERN,
+        description="a 64-character hexadecimal digest",
+    )
 
     final_verify_passed = value.get("final_verify_passed")
     if final_verify_passed is not None and not isinstance(final_verify_passed, bool):
@@ -154,6 +208,7 @@ def _normalize_evidence_summary(
         "kind": kind,
         "schema_version": schema_version,
         "source": source.strip() if isinstance(source, str) else source,
+        "sha256": sha256,
         "final_verify_passed": final_verify_passed,
     }
     for field in EVIDENCE_COUNT_FIELDS:
@@ -213,6 +268,7 @@ def load_run_evidence(path_str: str) -> dict[str, Any]:
     return {
         **raw,
         "path": str(path),
+        "sha256": _sha256_file(path),
         "run": {**run, "run_id": run_id},
         "outcome": {**outcome, "result": result},
         "metrics": metrics,
@@ -296,6 +352,7 @@ def load_benchmark_suite(path_str: str) -> dict[str, Any]:
 
     return {
         "path": str(path),
+        "sha256": _sha256_file(path),
         "suite_id": suite_id,
         "description": description,
         "quality_scale": quality_scale,
@@ -381,9 +438,27 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
         notes = run_raw.get("notes", "")
         if notes is not None and not isinstance(notes, str):
             errors.append(f"{context}: 'notes' must be a string when present")
-        model = run_raw.get("model")
-        if model is not None and not isinstance(model, str):
-            errors.append(f"{context}: 'model' must be a string when present")
+        model = _optional_string(run_raw.get("model"), "model", errors, context)
+        reasoning_effort = _optional_string(
+            run_raw.get("reasoning_effort"),
+            "reasoning_effort",
+            errors,
+            context,
+        )
+        codex_version = _optional_string(
+            run_raw.get("codex_version"),
+            "codex_version",
+            errors,
+            context,
+        )
+        repo_commit = _optional_hex_value(
+            run_raw.get("repo_commit"),
+            "repo_commit",
+            errors,
+            context,
+            pattern=HEX_REVISION_PATTERN,
+            description="a 7-to-64-character hexadecimal revision",
+        )
         run_id = run_raw.get("run_id")
         if run_id is not None and not isinstance(run_id, str):
             errors.append(f"{context}: 'run_id' must be a string when present")
@@ -414,6 +489,9 @@ def load_benchmark_results(path_str: str, suite: dict[str, Any] | None = None) -
                 "quality_score": quality_score,
                 "notes": notes or "",
                 "model": model,
+                "reasoning_effort": reasoning_effort,
+                "codex_version": codex_version,
+                "repo_commit": repo_commit,
                 "run_id": run_id,
                 "profile": profile,
                 "failure_reason": failure_reason,
@@ -483,6 +561,9 @@ def build_benchmark_record(
     quality_score: float,
     cost_usd: float | None = None,
     model: str | None = None,
+    reasoning_effort: str | None = None,
+    codex_version: str | None = None,
+    repo_commit: str | None = None,
     notes: str = "",
 ) -> dict[str, Any]:
     """Convert validated run evidence into one benchmark result record."""
@@ -490,6 +571,31 @@ def build_benchmark_record(
         _fail("quality_score must be between 0.0 and 1.0")
     if cost_usd is not None and (not math.isfinite(cost_usd) or cost_usd < 0):
         _fail("cost_usd must be >= 0")
+
+    metadata_errors: list[str] = []
+    model = _optional_string(model, "model", metadata_errors, "record")
+    reasoning_effort = _optional_string(
+        reasoning_effort,
+        "reasoning_effort",
+        metadata_errors,
+        "record",
+    )
+    codex_version = _optional_string(
+        codex_version,
+        "codex_version",
+        metadata_errors,
+        "record",
+    )
+    repo_commit = _optional_hex_value(
+        repo_commit,
+        "repo_commit",
+        metadata_errors,
+        "record",
+        pattern=HEX_REVISION_PATTERN,
+        description="a 7-to-64-character hexadecimal revision",
+    )
+    if metadata_errors:
+        _fail("; ".join(metadata_errors))
 
     run = evidence["run"]
     outcome = evidence["outcome"]
@@ -506,6 +612,7 @@ def build_benchmark_record(
         "kind": evidence["kind"],
         "schema_version": evidence["schema_version"],
         "source": evidence["path"],
+        "sha256": evidence["sha256"],
         "final_verify_passed": final_verify.get("passed"),
     }
     for field in EVIDENCE_COUNT_FIELDS:
@@ -521,6 +628,9 @@ def build_benchmark_record(
         "quality_score": quality_score,
         "notes": notes,
         "model": model,
+        "reasoning_effort": reasoning_effort,
+        "codex_version": codex_version,
+        "repo_commit": repo_commit,
         "run_id": run.get("run_id"),
         "profile": run.get("profile"),
         "failure_reason": failure_reason,
@@ -598,6 +708,117 @@ def _build_strategy_summary(
             f"total_{field}": sum(int(evidence.get(field) or 0) for evidence in evidence_rows)
             for field in EVIDENCE_COUNT_FIELDS
         },
+    }
+
+
+def _distinct_run_values(runs: list[dict[str, Any]], field: str) -> list[str]:
+    return sorted(
+        {value for run in runs if isinstance((value := run.get(field)), str) and value.strip()}
+    )
+
+
+def _build_reproducibility_summary(
+    suite: dict[str, Any],
+    results: dict[str, Any],
+    missing_runs: list[dict[str, str]],
+) -> dict[str, Any]:
+    recorded_runs = [run for run in results["runs"] if run["status"] == "recorded"]
+    missing_metadata = {
+        field: sum(1 for run in recorded_runs if not run.get(field))
+        for field in REPRODUCIBILITY_FIELDS
+    }
+    metadata_complete_run_count = sum(
+        1 for run in recorded_runs if all(run.get(field) for field in REPRODUCIBILITY_FIELDS)
+    )
+    evidence_runs = [run for run in recorded_runs if isinstance(run.get("evidence"), dict)]
+    evidence_hash_run_count = sum(1 for run in evidence_runs if run["evidence"].get("sha256"))
+
+    strategy_environments = []
+    strategy_drift = []
+    for strategy in results["strategies"]:
+        strategy_runs = [run for run in recorded_runs if run["strategy"] == strategy]
+        values = {
+            field: _distinct_run_values(strategy_runs, field) for field in REPRODUCIBILITY_FIELDS
+        }
+        drift_fields = [field for field, items in values.items() if len(items) > 1]
+        if drift_fields:
+            strategy_drift.append({"strategy": strategy, "fields": drift_fields})
+        strategy_environments.append(
+            {
+                "strategy": strategy,
+                "recorded_runs": len(strategy_runs),
+                "models": values["model"],
+                "reasoning_efforts": values["reasoning_effort"],
+                "codex_versions": values["codex_version"],
+                "repo_commits": values["repo_commit"],
+                "metadata_complete": bool(strategy_runs)
+                and all(
+                    all(run.get(field) for field in REPRODUCIBILITY_FIELDS) for run in strategy_runs
+                ),
+                "stable": bool(strategy_runs) and not drift_fields,
+            }
+        )
+
+    shared_drift_fields = [
+        field
+        for field in SHARED_ENVIRONMENT_FIELDS
+        if len(_distinct_run_values(recorded_runs, field)) > 1
+    ]
+    issues: list[dict[str, Any]] = []
+    if missing_runs:
+        issues.append(
+            {
+                "code": "incomplete_matrix",
+                "message": "One or more declared task/strategy cells are pending or missing.",
+                "run_count": len(missing_runs),
+            }
+        )
+    missing_fields = [field for field, count in missing_metadata.items() if count]
+    if missing_fields:
+        issues.append(
+            {
+                "code": "missing_execution_metadata",
+                "message": "Recorded runs are missing required reproducibility metadata.",
+                "fields": missing_fields,
+                "counts": {field: missing_metadata[field] for field in missing_fields},
+            }
+        )
+    if evidence_hash_run_count != len(evidence_runs):
+        issues.append(
+            {
+                "code": "unhashed_evidence",
+                "message": "One or more evidence-backed rows lack an evidence SHA-256.",
+                "run_count": len(evidence_runs) - evidence_hash_run_count,
+            }
+        )
+    if strategy_drift:
+        issues.append(
+            {
+                "code": "strategy_environment_drift",
+                "message": "Execution metadata varies across task rows within a strategy.",
+                "strategies": strategy_drift,
+            }
+        )
+    if shared_drift_fields:
+        issues.append(
+            {
+                "code": "shared_environment_drift",
+                "message": "Shared Codex or repository metadata varies across strategies.",
+                "fields": shared_drift_fields,
+            }
+        )
+
+    return {
+        "suite_sha256": suite["sha256"],
+        "required_fields": list(REPRODUCIBILITY_FIELDS),
+        "recorded_run_count": len(recorded_runs),
+        "metadata_complete_run_count": metadata_complete_run_count,
+        "missing_metadata": missing_metadata,
+        "evidence_run_count": len(evidence_runs),
+        "evidence_hash_run_count": evidence_hash_run_count,
+        "strategy_environments": strategy_environments,
+        "issues": issues,
+        "ready_for_executor_decision": not issues,
     }
 
 
@@ -696,6 +917,7 @@ def build_benchmark_report(suite: dict[str, Any], results: dict[str, Any]) -> di
         "recorded_run_count": len(recorded_runs),
         "pending_run_count": len(missing_runs),
         "strategies": strategy_summary,
+        "reproducibility": _build_reproducibility_summary(suite, results, missing_runs),
         "category_breakdown": category_breakdown,
         "missing_runs": missing_runs,
         "tasks": list(task_map.values()),
@@ -713,6 +935,12 @@ def _format_number(value: float | None, decimals: int = 2) -> str:
     return f"{value:.{decimals}f}"
 
 
+def _format_metadata_values(values: list[str]) -> str:
+    if not values:
+        return "n/a"
+    return ", ".join(value.replace("|", "\\|") for value in values)
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
     lines = [
         f"# Benchmark Report: {report['suite_id']}",
@@ -727,14 +955,60 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         f"- Pending or missing runs: {report['pending_run_count']}",
         f"- Quality scale: {report['quality_scale']}",
         "",
-        "## Strategy Comparison",
+        "## Reproducibility And Decision Readiness",
+        "",
+        f"- Suite SHA-256: `{report['reproducibility']['suite_sha256']}`",
+        (
+            "- Complete execution metadata: "
+            f"{report['reproducibility']['metadata_complete_run_count']} / "
+            f"{report['reproducibility']['recorded_run_count']} recorded runs"
+        ),
+        (
+            "- Evidence SHA-256 coverage: "
+            f"{report['reproducibility']['evidence_hash_run_count']} / "
+            f"{report['reproducibility']['evidence_run_count']} evidence-backed runs"
+        ),
+        (
+            "- Ready for executor decision: **"
+            f"{'yes' if report['reproducibility']['ready_for_executor_decision'] else 'no'}**"
+        ),
         "",
         (
-            "| Rank | Strategy | Success Rate | Avg Quality | "
-            "Avg Latency (s) | Avg Cost ($) | Coverage |"
+            "| Strategy | Model | Reasoning Effort | Codex Version | Repo Commit | "
+            "Complete | Stable |"
         ),
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
+
+    for environment in report["reproducibility"]["strategy_environments"]:
+        lines.append(
+            "| "
+            f"{environment['strategy']} | "
+            f"{_format_metadata_values(environment['models'])} | "
+            f"{_format_metadata_values(environment['reasoning_efforts'])} | "
+            f"{_format_metadata_values(environment['codex_versions'])} | "
+            f"{_format_metadata_values(environment['repo_commits'])} | "
+            f"{'yes' if environment['metadata_complete'] else 'no'} | "
+            f"{'yes' if environment['stable'] else 'no'} |"
+        )
+
+    if report["reproducibility"]["issues"]:
+        lines.extend(["", "Decision-readiness issues:", ""])
+        for issue in report["reproducibility"]["issues"]:
+            lines.append(f"- `{issue['code']}`: {issue['message']}")
+
+    lines.extend(
+        [
+            "",
+            "## Strategy Comparison",
+            "",
+            (
+                "| Rank | Strategy | Success Rate | Avg Quality | "
+                "Avg Latency (s) | Avg Cost ($) | Coverage |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
 
     for row in report["strategies"]:
         lines.append(
@@ -853,7 +1127,9 @@ def cmd_benchmark_init_results(args) -> None:
         "notes": (
             "Fill in each run entry after executing the task with the named strategy. "
             "Set status=recorded once success, latency_seconds, and quality_score "
-            "have been collected. Cost is optional when it is not observable."
+            "have been collected. Add model, reasoning_effort, codex_version, and "
+            "repo_commit for a decision-ready matrix. Cost is optional when it is "
+            "not observable."
         ),
         "runs": [
             {
@@ -866,6 +1142,9 @@ def cmd_benchmark_init_results(args) -> None:
                 "quality_score": None,
                 "notes": "",
                 "model": None,
+                "reasoning_effort": None,
+                "codex_version": None,
+                "repo_commit": None,
                 "run_id": None,
                 "profile": None,
                 "failure_reason": None,
@@ -915,6 +1194,9 @@ def cmd_benchmark_record(args) -> None:
         quality_score=args.quality_score,
         cost_usd=args.cost_usd,
         model=args.model,
+        reasoning_effort=args.reasoning_effort,
+        codex_version=args.codex_version,
+        repo_commit=args.repo_commit,
         notes=args.notes or "",
     )
     payload = record_benchmark_result(results, record)
@@ -935,6 +1217,10 @@ def cmd_benchmark_record(args) -> None:
                 "latency_seconds": record["latency_seconds"],
                 "quality_score": record["quality_score"],
                 "cost_usd": record["cost_usd"],
+                "model": record["model"],
+                "reasoning_effort": record["reasoning_effort"],
+                "codex_version": record["codex_version"],
+                "repo_commit": record["repo_commit"],
             }
         )
     )

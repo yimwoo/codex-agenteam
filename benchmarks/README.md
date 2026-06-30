@@ -26,12 +26,14 @@ tasks:
 - `minimal_team`: a lightweight multi-role handoff, such as `dev + reviewer`
 - `governed_pipeline`: the full AgenTeam governed pipeline
 
-Keep model versions, reasoning effort, Codex version, prompts, timeouts, and
-available seeds fixed across strategies. If a task requires repo setup, use the
-same setup for every strategy. Do not assume an `ultra` reasoning-effort value:
-record the exact setting accepted by the tested Codex build. If Sol is
-unavailable, record that limitation and run the remaining strategies instead
-of silently substituting another model.
+Keep Codex version, repo commit, prompts, timeouts, and available seeds fixed
+across strategies. Keep the exact model and reasoning effort stable across task
+rows within each strategy; those values may differ between strategies because
+the matrix intentionally compares different native and orchestrated setups. If
+a task requires repo setup, use the same setup for every strategy. Do not assume
+an `ultra` reasoning-effort value: record the exact setting accepted by the
+tested Codex build. If Sol is unavailable, record that limitation and run the
+remaining strategies instead of silently substituting another model.
 
 ## Files
 
@@ -68,7 +70,11 @@ python3 runtime/agenteam_rt.py benchmark record \
   --suite benchmarks/tasks/core-v1.yaml \
   --results benchmarks/results/my-run.json \
   --evidence .agenteam/evidence/<id>.json \
-  --task-id <task-id> --strategy minimal_team --quality-score 0.85
+  --task-id <task-id> --strategy minimal_team --quality-score 0.85 \
+  --model <exact-model-id> \
+  --reasoning-effort <accepted-value> \
+  --codex-version <exact-version> \
+  --repo-commit <git-sha>
 
 # Aggregate the result matrix
 python3 runtime/agenteam_rt.py benchmark report \
@@ -77,11 +83,21 @@ python3 runtime/agenteam_rt.py benchmark report \
   --markdown-out benchmarks/results/my-run.md
 ```
 
+`benchmark record` computes and stores the evidence file's SHA-256. The report
+also hashes the suite and emits a reproducibility audit. A matrix is ready for
+an executor decision only when every declared cell is recorded, every row has
+the four execution fields above, every attached evidence bundle has a digest,
+each strategy is internally stable, and Codex version plus repo commit match
+across strategies. Historical or illustrative results with missing metadata
+still validate, but the report marks them not ready.
+
 ## Publishing guidance
 
 - Publish the raw results JSON alongside the aggregate table.
 - Preserve the referenced evidence files for every AgenTeam-backed row.
 - Disclose the exact strategy definitions, model and reasoning-effort values,
   Codex version, and repo commit.
+- Publish the suite SHA-256 and preserve every referenced evidence bundle so
+  its recorded SHA-256 can be verified.
 - Say where orchestration loses, not just where it wins.
 - Treat docs-only or trivial one-shot edits as a separate class of task.
