@@ -50,6 +50,13 @@ agenteam-rt migrate --dry-run                # preview changes
 agenteam-rt migrate                          # apply migration
 ```
 
+`doctor` reports version and feature discovery plus an additive `capabilities`
+object. `capabilities.structured_output` records support for
+`--output-schema` and `--output-last-message`; these become readiness errors
+when project config enables `structured_handoffs`. `capabilities.hooks`
+reports whether Codex exposes and enables lifecycle hooks. Disabled hooks are
+informational because AgenTeam does not currently bundle hook commands.
+
 ### Roles
 
 ```bash

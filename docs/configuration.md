@@ -135,6 +135,12 @@ behavior. When enabled, do not pass `--output-schema`, `-o`, or
 `--output-last-message` through `--codex-args`, because AgenTeam owns those
 paths.
 
+Run `agenteam-rt doctor` after enabling this option. Doctor inspects the local
+`codex exec --help` surface and reports readiness errors when either required
+structured-output flag is unavailable. It also reports the current Codex hooks
+feature state for future lifecycle integration; hooks are not required for
+structured handoffs and are not bundled by AgenTeam.
+
 ## Generated Codex Agents
 
 `agenteam-rt generate` writes resolved roles to `.codex/agents/*.toml` using

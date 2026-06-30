@@ -910,8 +910,23 @@ class TestPolicyCheck:
 
 
 class TestDoctorCommand:
-    def _write_fake_codex(self, tmp_path: Path, *, features_exit_code: int = 0) -> Path:
+    def _write_fake_codex(
+        self,
+        tmp_path: Path,
+        *,
+        features_exit_code: int = 0,
+        exec_help_exit_code: int = 0,
+        output_schema: bool = True,
+        output_last_message: bool = True,
+        hooks_enabled: bool = True,
+    ) -> Path:
         fake = tmp_path / "fake-codex"
+        exec_help_lines = []
+        if output_schema:
+            exec_help_lines.append("--output-schema <FILE>")
+        if output_last_message:
+            exec_help_lines.append("-o, --output-last-message <FILE>")
+        hooks_enabled_text = str(hooks_enabled).lower()
         fake.write_text(
             f"""#!{sys.executable}
 import sys
@@ -921,12 +936,15 @@ if args == ["--version"]:
     print("codex-cli 0.137.0")
     raise SystemExit(0)
 if args == ["features", "list"]:
-    print("hooks              stable  true")
+    print("hooks              stable  {hooks_enabled_text}")
     print("multi_agent        stable  true")
     print("goals              stable  true")
     print("plugins            stable  true")
     print("unified_exec       stable  true")
     raise SystemExit({features_exit_code})
+if args == ["exec", "--help"]:
+    print({chr(10).join(exec_help_lines)!r})
+    raise SystemExit({exec_help_exit_code})
 raise SystemExit(2)
 """
         )
@@ -943,7 +961,24 @@ raise SystemExit(2)
         assert result["ready"] is True
         assert result["codex"]["version"] == "0.137.0"
         assert result["features"]["hooks"] == {"stage": "stable", "enabled": True}
-        assert result["config"] == {"found": False, "path": None, "model_pins": []}
+        assert result["capabilities"]["structured_output"] == {
+            "available": True,
+            "output_schema": True,
+            "output_last_message": True,
+            "source": "codex exec --help",
+        }
+        assert result["capabilities"]["hooks"] == {
+            "reported": True,
+            "stage": "stable",
+            "enabled": True,
+            "source": "codex features list",
+        }
+        assert result["config"] == {
+            "found": False,
+            "path": None,
+            "model_pins": [],
+            "structured_handoffs": False,
+        }
         assert result["diagnostics"] == []
 
     def test_doctor_reports_deprecated_effective_model_pins(self, tmp_path):
@@ -992,6 +1027,76 @@ raise SystemExit(2)
         assert result["features"] == {}
         assert result["diagnostics"][0]["code"] == "D003"
         assert result["diagnostics"][0]["severity"] == "warning"
+
+    def test_doctor_reports_exec_help_failure_as_non_blocking_warning(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path, exec_help_exit_code=7)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        assert result["capabilities"]["structured_output"]["available"] is False
+        diagnostic = next(item for item in result["diagnostics"] if item["code"] == "D006")
+        assert diagnostic["severity"] == "warning"
+
+    def test_doctor_blocks_structured_handoffs_without_required_exec_flags(self, tmp_path):
+        fake_codex = self._write_fake_codex(
+            tmp_path,
+            output_schema=False,
+            output_last_message=False,
+        )
+        config_path = make_config(tmp_path)
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        config["structured_handoffs"] = True
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is False
+        assert result["config"]["structured_handoffs"] is True
+        assert result["capabilities"]["structured_output"]["available"] is False
+        assert {item["code"] for item in result["diagnostics"]} == {"D007", "D008"}
+
+    def test_doctor_accepts_structured_handoffs_with_required_exec_flags(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path)
+        config_path = make_config(tmp_path)
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        config["structured_handoffs"] = True
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        r = run_rt("doctor", "--codex-bin", str(fake_codex), cwd=str(tmp_path))
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        assert result["config"]["structured_handoffs"] is True
+        assert result["capabilities"]["structured_output"]["available"] is True
+        assert result["diagnostics"] == []
+
+    def test_doctor_reports_disabled_hooks_as_non_blocking_info(self, tmp_path):
+        fake_codex = self._write_fake_codex(tmp_path, hooks_enabled=False)
+
+        r = run_rt(
+            "doctor",
+            "--codex-bin",
+            str(fake_codex),
+            "--strict",
+            cwd=str(tmp_path),
+        )
+
+        assert r.returncode == 0
+        result = json.loads(r.stdout)
+        assert result["ready"] is True
+        assert result["capabilities"]["hooks"]["enabled"] is False
+        diagnostic = next(item for item in result["diagnostics"] if item["code"] == "D009")
+        assert diagnostic["severity"] == "info"
 
     def test_doctor_reports_invalid_config_without_traceback(self, tmp_path):
         fake_codex = self._write_fake_codex(tmp_path)
