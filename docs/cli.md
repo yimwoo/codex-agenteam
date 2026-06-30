@@ -99,7 +99,7 @@ agenteam-rt evidence --run-id <id> --output .agenteam/evidence/<id>.json
 
 # Create, populate, and report an evidence-backed benchmark matrix
 agenteam-rt benchmark init-results --suite path/to/suite.yaml \
-  --strategy single_agent --strategy sol_high_effort \
+  --strategy single_agent --strategy native_high_effort \
   --strategy minimal_team --strategy governed_pipeline \
   --output path/to/results.json
 agenteam-rt benchmark record --suite path/to/suite.yaml \
@@ -135,6 +135,44 @@ agenteam-rt run --run-id <id>  # resume an existing run
 ```
 
 `agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed. The runner invokes Codex with `codex exec --json --sandbox workspace-write` by default; pass an explicit `--sandbox ...` value through `--codex-args` when an automation needs a different boundary.
+
+### Seeded benchmark pilot
+
+The repository-level pilot wrapper compares `single_agent`,
+`native_high_effort`, `minimal_team`, and `governed_pipeline` on the same
+seeded task. It pins Codex/model settings, creates detached worktrees, captures
+native JSONL and AgenTeam run evidence, and delegates final validation and
+Markdown generation to the benchmark runtime commands above.
+
+```bash
+# Validate and inspect the no-model plan
+python3 scripts/benchmark-pilot.py validate \
+  --manifest benchmarks/pilot/manifest.yaml
+python3 scripts/benchmark-pilot.py dry-run \
+  --manifest benchmarks/pilot/manifest.yaml
+
+# After the harness is merged: prepare, execute/resume all cells, and finalize
+python3 scripts/benchmark-pilot.py execute \
+  --manifest benchmarks/pilot/manifest.yaml
+
+# Recovery: inspect state, resume one cell, or clean disposable worktrees
+python3 scripts/benchmark-pilot.py inspect \
+  --manifest benchmarks/pilot/manifest.yaml
+python3 scripts/benchmark-pilot.py run \
+  --manifest benchmarks/pilot/manifest.yaml --strategy governed_pipeline
+python3 scripts/benchmark-pilot.py cleanup \
+  --manifest benchmarks/pilot/manifest.yaml
+```
+
+Local state and artifacts are under `.agenteam/benchmarks/<pilot-id>/`.
+Completed strategies are not rerun; incomplete AgenTeam runs retain their run
+ID for resume. Cleanup removes only clean worktrees and reports dirty ones as
+preserved. The pinned Codex 0.137.0 pilot records GPT-5.6 Sol as unavailable
+and uses GPT-5.5 xhigh for `native_high_effort`; validation fails closed if the
+live version, model, or reasoning catalog drifts. The deterministic score is
+`1.0` only for a successful terminal execution plus passing postcheck, else
+`0.0`. Do not publish performance claims from an unmerged branch or before the
+report marks the matrix `ready_for_executor_decision`.
 
 ### Governed Delivery Foundations
 
