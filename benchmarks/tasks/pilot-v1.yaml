@@ -1,0 +1,26 @@
+suite_id: agenteam-seeded-pilot-v1
+description: >
+  One deterministic seeded regression used to validate benchmark isolation,
+  capture, and scoring before the full AgenTeam strategy matrix runs.
+quality_scale: 0.0-1.0
+tasks:
+  - id: dispatch-scope-guardrail
+    title: Restore overlap-safe scoped writer dispatch
+    category: bugfix
+    difficulty: medium
+    prompt: >
+      Fix the seeded regression in scoped dispatch planning so writers with an
+      overlapping write-scope pattern never share a parallel group. Preserve
+      deterministic grouping for non-overlapping writers, keep read-only roles
+      dispatchable, and limit changes to the smallest justified code and tests.
+    setup:
+      - git apply benchmarks/seeds/dispatch-scope-overlap.patch
+    checks:
+      - python3 -m pytest test/test_runtime.py::TestWriterGroups -q
+    acceptance:
+      - Overlapping writers are separated deterministically.
+      - Non-overlapping writers remain grouped when safe.
+      - Read-only participants remain outside writer groups.
+      - No unrelated runtime behavior changes.
+    tags: [dispatch, isolation, policy, seeded]
+    timeout_minutes: 10

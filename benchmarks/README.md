@@ -15,14 +15,14 @@ publish numbers that other people can reproduce.
   gate blocks, final verification, artifacts, structured handoffs, and invalid
   handoffs
 
-## MVP benchmark shape
+## Recommended benchmark shape
 
 The recommended first release compares four strategies on 8 to 12 coding
 tasks:
 
 - `single_agent`: the current recommended single-agent Codex setup
-- `sol_high_effort`: GPT-5.6 Sol when available, using a supported high-effort
-  setting recorded in the run metadata
+- `native_high_effort`: the same native Codex generation at a higher supported
+  reasoning setting; the seeded pilot pins GPT-5.5 xhigh
 - `minimal_team`: a lightweight multi-role handoff, such as `dev + reviewer`
 - `governed_pipeline`: the full AgenTeam governed pipeline
 
@@ -35,9 +35,17 @@ an `ultra` reasoning-effort value: record the exact setting accepted by the
 tested Codex build. If Sol is unavailable, record that limitation and run the
 remaining strategies instead of silently substituting another model.
 
+The tracked seeded pilot records GPT-5.6 Sol as unavailable in Codex 0.137.0.
+That is an execution snapshot, not a permanent product claim. Always rerun
+manifest validation against the live Codex model catalog before executing.
+
 ## Files
 
 - `tasks/core-v1.yaml`: illustrative task suite
+- `tasks/pilot-v1.yaml`: deterministic one-task seeded pilot suite
+- `seeds/dispatch-scope-overlap.patch`: tracked pilot regression seed
+- `pilot/manifest.yaml`: pinned four-strategy pilot manifest
+- `pilot/agenteam.yaml`: isolated GPT-5.5 team configuration
 - `results/sample-results.json`: illustrative fixture data for report formatting
 - `results/sample-report.md`: generated Markdown report from the sample fixture
 
@@ -58,7 +66,7 @@ python3 runtime/agenteam_rt.py benchmark validate \
 python3 runtime/agenteam_rt.py benchmark init-results \
   --suite benchmarks/tasks/core-v1.yaml \
   --strategy single_agent \
-  --strategy sol_high_effort \
+  --strategy native_high_effort \
   --strategy minimal_team \
   --strategy governed_pipeline \
   --output benchmarks/results/my-run.json
@@ -90,6 +98,53 @@ the four execution fields above, every attached evidence bundle has a digest,
 each strategy is internally stable, and Codex version plus repo commit match
 across strategies. Historical or illustrative results with missing metadata
 still validate, but the report marks them not ready.
+
+## Seeded pilot lifecycle
+
+The pilot harness is separate from normal AgenTeam runtime behavior. It creates
+detached worktrees under ignored local storage, applies the same seed to all
+four, and retains exact commands, JSONL, diffs, checks, usage, and evidence.
+Planning and implementation verification must not start real model calls.
+
+```bash
+# Capability, manifest, seed, and model-pin validation
+python3 scripts/benchmark-pilot.py validate \
+  --manifest benchmarks/pilot/manifest.yaml
+
+# No-model plan and the exact post-merge execution command
+python3 scripts/benchmark-pilot.py dry-run \
+  --manifest benchmarks/pilot/manifest.yaml
+
+# Run only after this harness is merged and checked out on a clean main
+python3 scripts/benchmark-pilot.py execute \
+  --manifest benchmarks/pilot/manifest.yaml
+
+# Inspect resumable state or resume only one interrupted strategy
+python3 scripts/benchmark-pilot.py inspect \
+  --manifest benchmarks/pilot/manifest.yaml
+python3 scripts/benchmark-pilot.py run \
+  --manifest benchmarks/pilot/manifest.yaml \
+  --strategy minimal_team
+
+# Remove only clean recorded worktrees; dirty ones are preserved for recovery
+python3 scripts/benchmark-pilot.py cleanup \
+  --manifest benchmarks/pilot/manifest.yaml
+```
+
+Artifacts live at
+`.agenteam/benchmarks/dispatch-scope-pilot-v1/`: `state.json` is the resume
+source of truth, `runs/<task>--<strategy>/` retains per-strategy evidence, and
+`report/` contains `results.json`, `report.json`, `report.md`, and a compact
+summary. `cleanup` never deletes a dirty experiment worktree. Inspect and
+commit, copy, or manually clean useful recovery data before retrying cleanup.
+
+Success and `quality_score` are deterministic in this pilot: both are `1.0`
+only when the executor reaches a successful terminal result and the configured
+postcheck passes; otherwise success is false and quality is `0.0`. Exact token
+usage remains in pilot artifacts because the shared benchmark result schema
+does not yet include token fields. Real execution and publication remain
+separate: merge the harness first, then run it from `main`, and publish results
+only after the generated report says `ready_for_executor_decision=true`.
 
 ## Publishing guidance
 

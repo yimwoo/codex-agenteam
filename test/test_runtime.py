@@ -11,6 +11,7 @@ import yaml
 
 # Add runtime to path
 RUNTIME = Path(__file__).resolve().parent.parent / "runtime" / "agenteam_rt.py"
+BENCHMARK_PILOT = Path(__file__).resolve().parent.parent / "scripts" / "benchmark-pilot.py"
 ROLES_DIR = Path(__file__).resolve().parent.parent / "roles"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "agenteam.yaml.template"
 
@@ -19,6 +20,21 @@ def run_rt(*args, cwd=None, env: dict[str, str] | None = None) -> subprocess.Com
     """Run agenteam-rt with given args."""
     return subprocess.run(
         [sys.executable, str(RUNTIME), *args],
+        capture_output=True,
+        text=True,
+        cwd=cwd or os.getcwd(),
+        env={**os.environ, **(env or {})},
+    )
+
+
+def run_benchmark_pilot(
+    *args,
+    cwd=None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    """Run the seeded benchmark pilot CLI with given args."""
+    return subprocess.run(
+        [sys.executable, str(BENCHMARK_PILOT), *args],
         capture_output=True,
         text=True,
         cwd=cwd or os.getcwd(),
@@ -9430,3 +9446,1023 @@ class TestBenchmarkCommands:
             {"strategy": "minimal_team", "fields": ["model"]}
         ]
         assert reproducibility["strategy_environments"][0]["stable"] is False
+
+
+class TestBenchmarkPilot:
+    @staticmethod
+    def _write_fake_codex(tmp_path: Path) -> Path:
+        codex = tmp_path / "fake-codex"
+        codex.write_text(
+            """#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+
+if sys.argv[1:] == ["--version"]:
+    print("codex-cli 0.137.0")
+elif sys.argv[1:] == ["debug", "models"]:
+    print(json.dumps({"models": [
+        {"slug": "gpt-5.5", "supported_reasoning_levels": [
+            {"effort": "low"}, {"effort": "medium"},
+            {"effort": "high"}, {"effort": "xhigh"}
+        ]},
+        {"slug": "gpt-5.4-mini", "supported_reasoning_levels": [
+            {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+        ]}
+    ]}))
+elif sys.argv[1:2] == ["exec"]:
+    count_path = Path("codex-invocations.txt")
+    count = int(count_path.read_text()) + 1 if count_path.exists() else 1
+    count_path.write_text(str(count))
+    Path("logic.txt").write_text("safe\\n")
+    if "--output-last-message" in sys.argv:
+        output_index = sys.argv.index("--output-last-message") + 1
+        Path(sys.argv[output_index]).write_text(json.dumps({
+            "status": "completed", "summary": "Restored overlap-safe dispatch."
+        }))
+    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+    print(json.dumps({"type": "turn.completed", "usage": {
+        "input_tokens": 100,
+        "cached_input_tokens": 20,
+        "output_tokens": 30,
+        "reasoning_output_tokens": 10
+    }}))
+else:
+    print(json.dumps({"error": "unexpected fake Codex arguments", "argv": sys.argv[1:]}))
+    sys.exit(2)
+"""
+        )
+        codex.chmod(0o755)
+        return codex
+
+    @staticmethod
+    def _write_fake_agenteam(tmp_path: Path) -> Path:
+        agenteam = tmp_path / "fake-agenteam.py"
+        agenteam.write_text(
+            """#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+calls = Path("fake-agenteam-calls.jsonl")
+with calls.open("a") as stream:
+    stream.write(json.dumps(args) + "\\n")
+
+if "generate" in args:
+    config_path = Path(args[args.index("--config") + 1])
+    config_text = config_path.read_text()
+    if "gpt-5.3-codex" in config_text:
+        print(json.dumps({"error": "deprecated model pin"}), file=sys.stderr)
+        sys.exit(3)
+    agents = Path(".codex/agents")
+    agents.mkdir(parents=True, exist_ok=True)
+    (agents / "dev.toml").write_text('model = "gpt-5.5"\\n')
+    print(json.dumps({"generated": ["dev"]}))
+elif "run" in args:
+    profile = args[args.index("--profile") + 1]
+    run_id = f"fake-{profile}"
+    codex_bin = args[args.index("--codex-bin") + 1]
+    completed = subprocess.run(
+        [codex_bin, "exec"], capture_output=True, text=True, check=False
+    )
+    print(json.dumps({"type": "run_started", "run_id": run_id, "profile": profile}))
+    print(json.dumps({"type": "run_completed", "run_id": run_id}))
+    sys.exit(completed.returncode)
+elif "evidence" in args:
+    run_id = args[args.index("--run-id") + 1]
+    output = Path(args[args.index("--output") + 1])
+    fail_once = Path("fail-evidence-once")
+    if fail_once.exists():
+        fail_once.unlink()
+        print(json.dumps({"error": "transient evidence failure"}), file=sys.stderr)
+        sys.exit(9)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({
+        "schema_version": "1",
+        "kind": "agenteam.run_evidence",
+        "run": {
+            "run_id": run_id,
+            "profile": run_id.removeprefix("fake-"),
+            "status": "completed",
+            "elapsed_seconds": 1.25
+        },
+        "outcome": {"result": "completed", "reason": "run completed"},
+        "metrics": {
+            "failed_stage_count": 0,
+            "retry_count": 0,
+            "gate_block_count": 0
+        },
+        "final_verify": {"passed": True}
+    }))
+    print(json.dumps({"created": True, "output": str(output)}))
+else:
+    print(json.dumps({"error": "unexpected fake AgenTeam arguments", "argv": args}))
+    sys.exit(2)
+"""
+        )
+        agenteam.chmod(0o755)
+        return agenteam
+
+    @staticmethod
+    def _manifest_payload(tmp_path: Path) -> dict:
+        seed = tmp_path / "dispatch-overlap.patch"
+        seed.write_text("seed fixture\n")
+        suite = tmp_path / "pilot-suite.yaml"
+        suite.write_text(
+            yaml.safe_dump(
+                {
+                    "suite_id": "agenteam-seeded-pilot-v1",
+                    "description": "Deterministic seeded benchmark pilot.",
+                    "quality_scale": "0.0-1.0",
+                    "tasks": [
+                        {
+                            "id": "dispatch-scope-guardrail",
+                            "title": "Restore overlap-safe dispatch",
+                            "category": "bugfix",
+                            "difficulty": "medium",
+                            "prompt": "Repair the seeded dispatch regression.",
+                            "setup": [],
+                            "checks": ["verify"],
+                            "acceptance": ["The regression is repaired."],
+                            "tags": ["seeded"],
+                            "timeout_minutes": 10,
+                        }
+                    ],
+                }
+            )
+        )
+        return {
+            "schema_version": "1",
+            "pilot_id": "dispatch-scope-pilot-v1",
+            "base_ref": "HEAD",
+            "artifact_root": str(tmp_path / "artifacts"),
+            "suite": str(suite),
+            "codex": {
+                "version": "0.137.0",
+                "gpt_5_6_sol": {
+                    "available": False,
+                    "reason": "Absent from the live Codex model catalog.",
+                },
+            },
+            "task": {
+                "id": "dispatch-scope-guardrail",
+                "prompt": "Repair dispatch planning so overlapping writers never share a group.",
+                "seed_patch": str(seed),
+                "precheck": ("python3 -m pytest test/test_runtime.py::TestWriterGroups -q"),
+                "verify": ("python3 -m pytest test/test_runtime.py::TestWriterGroups -q"),
+                "timeout_seconds": 600,
+            },
+            "strategies": [
+                {
+                    "id": "single_agent",
+                    "adapter": "native",
+                    "model": "gpt-5.5",
+                    "reasoning_effort": "medium",
+                },
+                {
+                    "id": "native_high_effort",
+                    "adapter": "native",
+                    "model": "gpt-5.5",
+                    "reasoning_effort": "xhigh",
+                },
+                {
+                    "id": "minimal_team",
+                    "adapter": "agenteam",
+                    "profile": "minimal_team",
+                    "model": "gpt-5.5",
+                    "reasoning_effort": "medium",
+                },
+                {
+                    "id": "governed_pipeline",
+                    "adapter": "agenteam",
+                    "profile": "governed_pipeline",
+                    "model": "gpt-5.5",
+                    "reasoning_effort": "medium",
+                },
+            ],
+        }
+
+    @classmethod
+    def _write_manifest(cls, tmp_path: Path, payload: dict | None = None) -> Path:
+        manifest = tmp_path / "manifest.yaml"
+        manifest.write_text(yaml.safe_dump(payload or cls._manifest_payload(tmp_path)))
+        return manifest
+
+    def _run_validate(self, tmp_path: Path, payload: dict) -> subprocess.CompletedProcess:
+        codex = self._write_fake_codex(tmp_path)
+        manifest = self._write_manifest(tmp_path, payload)
+        return run_benchmark_pilot(
+            "validate",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            cwd=str(tmp_path),
+        )
+
+    @staticmethod
+    def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    @classmethod
+    def _seed_repo(cls, tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        logic = repo / "logic.txt"
+        logic.write_text("safe\n")
+        payload = cls._manifest_payload(repo)
+        seed = repo / "dispatch-overlap.patch"
+        seed.write_text(
+            """diff --git a/logic.txt b/logic.txt
+--- a/logic.txt
++++ b/logic.txt
+@@ -1 +1 @@
+-safe
++broken
+"""
+        )
+        artifact_root = tmp_path / "artifacts"
+        payload["artifact_root"] = str(artifact_root)
+        payload["task"]["seed_patch"] = str(seed)
+        payload["task"]["precheck"] = (
+            'python3 -c "from pathlib import Path; '
+            "raise SystemExit('broken' in Path('logic.txt').read_text())\""
+        )
+        payload["task"]["verify"] = payload["task"]["precheck"]
+        manifest = cls._write_manifest(repo, payload)
+        (repo / "agenteam.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "version": "1",
+                    "isolation": "none",
+                    "structured_handoffs": True,
+                    "roles": {
+                        "dev": {
+                            "model": "gpt-5.5",
+                            "reasoning_effort": "medium",
+                            "can_write": True,
+                        },
+                        "reviewer": {
+                            "model": "gpt-5.5",
+                            "reasoning_effort": "medium",
+                            "can_write": False,
+                        },
+                    },
+                    "pipeline": {
+                        "stages": [
+                            {"name": "implement", "roles": ["dev"], "gate": "auto"},
+                            {
+                                "name": "review",
+                                "roles": ["reviewer"],
+                                "gate": "auto",
+                            },
+                        ],
+                        "profiles": {
+                            "minimal_team": {"stages": ["implement", "review"]},
+                            "governed_pipeline": {"stages": ["implement", "review"]},
+                        },
+                    },
+                }
+            )
+        )
+        cls._git(repo, "init", "-b", "main")
+        cls._git(repo, "config", "user.name", "Benchmark Test")
+        cls._git(repo, "config", "user.email", "benchmark@example.com")
+        cls._git(repo, "add", ".")
+        cls._git(repo, "commit", "-m", "seed baseline")
+        codex = cls._write_fake_codex(tmp_path)
+        return repo, manifest, codex, artifact_root
+
+    def test_validate_and_plan_pinned_four_strategy_manifest(self, tmp_path):
+        codex = self._write_fake_codex(tmp_path)
+        manifest = self._write_manifest(tmp_path)
+
+        validated = run_benchmark_pilot(
+            "validate",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            cwd=str(tmp_path),
+        )
+        planned = run_benchmark_pilot(
+            "plan",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            cwd=str(tmp_path),
+        )
+
+        assert validated.returncode == 0, validated.stderr
+        validation = json.loads(validated.stdout)
+        assert validation["valid"] is True
+        assert validation["pilot_id"] == "dispatch-scope-pilot-v1"
+        assert validation["codex_version"] == "0.137.0"
+        assert validation["strategy_count"] == 4
+        assert validation["gpt_5_6_sol"]["available"] is False
+
+        assert planned.returncode == 0, planned.stderr
+        plan = json.loads(planned.stdout)
+        assert [row["strategy"] for row in plan["plans"]] == [
+            "single_agent",
+            "native_high_effort",
+            "minimal_team",
+            "governed_pipeline",
+        ]
+        assert {row["base_ref"] for row in plan["plans"]} == {"HEAD"}
+        assert {row["task_id"] for row in plan["plans"]} == {"dispatch-scope-guardrail"}
+        assert plan["plans"][0]["model"] == "gpt-5.5"
+        assert plan["plans"][1]["reasoning_effort"] == "xhigh"
+
+    def test_validate_rejects_missing_required_field(self, tmp_path):
+        payload = self._manifest_payload(tmp_path)
+        del payload["pilot_id"]
+
+        result = self._run_validate(tmp_path, payload)
+
+        assert result.returncode != 0
+        assert "pilot_id" in json.loads(result.stderr)["error"]
+
+    def test_validate_rejects_unknown_strategy(self, tmp_path):
+        payload = self._manifest_payload(tmp_path)
+        payload["strategies"][0]["id"] = "surprise_agent"
+
+        result = self._run_validate(tmp_path, payload)
+
+        assert result.returncode != 0
+        assert "surprise_agent" in json.loads(result.stderr)["error"]
+
+    def test_validate_rejects_invalid_reasoning_effort(self, tmp_path):
+        payload = self._manifest_payload(tmp_path)
+        payload["strategies"][0]["reasoning_effort"] = "ultra"
+
+        result = self._run_validate(tmp_path, payload)
+
+        assert result.returncode != 0
+        assert "ultra" in json.loads(result.stderr)["error"]
+
+    def test_validate_rejects_model_missing_from_live_catalog(self, tmp_path):
+        payload = self._manifest_payload(tmp_path)
+        payload["strategies"][0]["model"] = "gpt-5.6-sol"
+
+        result = self._run_validate(tmp_path, payload)
+
+        assert result.returncode != 0
+        assert "gpt-5.6-sol" in json.loads(result.stderr)["error"]
+
+    def test_validate_rejects_codex_version_drift(self, tmp_path):
+        payload = self._manifest_payload(tmp_path)
+        payload["codex"]["version"] = "0.136.0"
+
+        result = self._run_validate(tmp_path, payload)
+
+        assert result.returncode != 0
+        assert "0.136.0" in json.loads(result.stderr)["error"]
+        assert "0.137.0" in json.loads(result.stderr)["error"]
+
+    def test_prepare_creates_seeded_worktrees_and_failing_prechecks(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        source_head = self._git(repo, "rev-parse", "HEAD").stdout.strip()
+
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert prepared.returncode == 0, prepared.stderr
+        receipt = json.loads(prepared.stdout)
+        assert receipt["prepared_count"] == 4
+        assert Path(receipt["state_path"]).is_file()
+        state = json.loads(Path(receipt["state_path"]).read_text())
+        assert state["base_commit"] == source_head
+        assert len(state["plans"]) == 4
+        assert len({plan["seed_sha256"] for plan in state["plans"]}) == 1
+        for plan in state["plans"]:
+            worktree = Path(plan["worktree_path"])
+            assert worktree.is_dir()
+            assert (worktree / ".git").is_file()
+            assert (worktree / "logic.txt").read_text() == "broken\n"
+            assert plan["precheck_returncode"] != 0
+            assert self._git(worktree, "rev-parse", "HEAD").stdout.strip() == source_head
+        assert (repo / "logic.txt").read_text() == "safe\n"
+        assert self._git(repo, "status", "--porcelain").stdout == ""
+
+        inspected = run_benchmark_pilot(
+            "inspect",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert inspected.returncode == 0, inspected.stderr
+        assert json.loads(inspected.stdout)["prepared_count"] == 4
+
+    def test_prepare_rejects_dirty_source_checkout(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        (repo / "logic.txt").write_text("dirty\n")
+
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert prepared.returncode != 0
+        assert "dirty" in json.loads(prepared.stderr)["error"]
+
+    def test_prepare_rejects_reused_non_worktree_path(self, tmp_path):
+        repo, manifest, codex, artifact_root = self._seed_repo(tmp_path)
+        collision = (
+            artifact_root
+            / "dispatch-scope-pilot-v1"
+            / "worktrees"
+            / "dispatch-scope-guardrail--single_agent"
+        )
+        collision.mkdir(parents=True)
+
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert prepared.returncode != 0
+        assert "not a reusable worktree" in json.loads(prepared.stderr)["error"]
+
+    def test_prepare_records_worktree_before_unexpected_precheck_pass(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        payload = yaml.safe_load(manifest.read_text())
+        payload["task"]["precheck"] = "python3 -c 'raise SystemExit(0)'"
+        manifest.write_text(yaml.safe_dump(payload))
+        self._git(repo, "add", "manifest.yaml")
+        self._git(repo, "commit", "-m", "make precheck unexpectedly pass")
+
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert prepared.returncode != 0
+        assert "unexpectedly passed" in json.loads(prepared.stderr)["error"]
+        state_path = _artifact_root / "dispatch-scope-pilot-v1" / "state.json"
+        state = json.loads(state_path.read_text())
+        assert len(state["plans"]) == 1
+        assert state["plans"][0]["status"] == "prechecking"
+        assert Path(state["plans"][0]["worktree_path"]).is_dir()
+
+    def test_cleanup_removes_only_clean_matching_worktree(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        clean_worktree = Path(state["plans"][0]["worktree_path"])
+        self._git(clean_worktree, "reset", "--hard", "HEAD")
+        self._git(clean_worktree, "clean", "-fd")
+
+        removed = run_benchmark_pilot(
+            "cleanup",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "single_agent",
+            cwd=str(repo),
+        )
+        preserved = run_benchmark_pilot(
+            "cleanup",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "minimal_team",
+            cwd=str(repo),
+        )
+
+        assert removed.returncode == 0, removed.stderr
+        assert json.loads(removed.stdout)["removed"] == ["single_agent"]
+        assert not clean_worktree.exists()
+        assert preserved.returncode == 0, preserved.stderr
+        assert json.loads(preserved.stdout)["preserved"] == ["minimal_team"]
+
+    def test_native_run_captures_artifacts_usage_and_resumes(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+
+        first = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "single_agent",
+            cwd=str(repo),
+        )
+        second = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "single_agent",
+            cwd=str(repo),
+        )
+
+        assert first.returncode == 0, first.stderr
+        receipt = json.loads(first.stdout)
+        assert receipt["completed"] is True
+        assert receipt["success"] is True
+        assert receipt["already_completed"] is False
+        assert receipt["usage"] == {
+            "input_tokens": 100,
+            "cached_input_tokens": 20,
+            "output_tokens": 30,
+            "reasoning_output_tokens": 10,
+        }
+        assert receipt["latency_seconds"] >= 0
+
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "single_agent")
+        artifact_path = Path(plan["artifact_path"])
+        command = json.loads((artifact_path / "command.json").read_text())
+        assert command[:3] == [str(codex), "exec", "--ephemeral"]
+        assert "--json" in command
+        assert ["--sandbox", "workspace-write"] == command[
+            command.index("--sandbox") : command.index("--sandbox") + 2
+        ]
+        assert ["--model", "gpt-5.5"] == command[
+            command.index("--model") : command.index("--model") + 2
+        ]
+        assert 'model_reasoning_effort="medium"' in command
+        for filename in (
+            "stdout.jsonl",
+            "stderr.txt",
+            "final-response.json",
+            "diff.patch",
+            "verify.stdout.txt",
+            "verify.stderr.txt",
+            "usage.json",
+        ):
+            assert (artifact_path / filename).is_file()
+        assert (Path(plan["worktree_path"]) / "codex-invocations.txt").read_text() == "1"
+
+        assert second.returncode == 0, second.stderr
+        resumed = json.loads(second.stdout)
+        assert resumed["already_completed"] is True
+        assert (Path(plan["worktree_path"]) / "codex-invocations.txt").read_text() == "1"
+
+    def test_native_high_effort_run_pins_xhigh(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+
+        result = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "native_high_effort",
+            cwd=str(repo),
+        )
+
+        assert result.returncode == 0, result.stderr
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "native_high_effort")
+        command = json.loads((Path(plan["artifact_path"]) / "command.json").read_text())
+        assert 'model_reasoning_effort="xhigh"' in command
+
+    def test_agenteam_run_generates_agents_captures_evidence_and_resumes(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        agenteam = self._write_fake_agenteam(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+
+        first = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(agenteam),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "minimal_team",
+            cwd=str(repo),
+        )
+        second = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(agenteam),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "minimal_team",
+            cwd=str(repo),
+        )
+
+        assert first.returncode == 0, first.stderr
+        receipt = json.loads(first.stdout)
+        assert receipt["completed"] is True
+        assert receipt["success"] is True
+        assert receipt["run_id"] == "fake-minimal_team"
+        assert receipt["evidence"]["kind"] == "agenteam.run_evidence"
+        assert receipt["already_completed"] is False
+
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "minimal_team")
+        worktree = Path(plan["worktree_path"])
+        artifact_path = Path(plan["artifact_path"])
+        commands = json.loads((artifact_path / "commands.json").read_text())
+        assert "--auto-approve-gates" in commands["run"]
+        assert ["--profile", "minimal_team"] == commands["run"][
+            commands["run"].index("--profile") : commands["run"].index("--profile") + 2
+        ]
+        assert (worktree / ".codex/agents/dev.toml").read_text() == ('model = "gpt-5.5"\n')
+        assert "gpt-5.3-codex" not in (worktree / ".agenteam/config.yaml").read_text()
+        assert (worktree / "codex-invocations.txt").read_text() == "1"
+        for filename in (
+            "generate.stdout.json",
+            "generate.stderr.txt",
+            "runner.stdout.jsonl",
+            "runner.stderr.txt",
+            "evidence.json",
+            "evidence.stdout.json",
+            "evidence.stderr.txt",
+            "verify.stdout.txt",
+            "verify.stderr.txt",
+            "diff.patch",
+        ):
+            assert (artifact_path / filename).is_file()
+
+        assert second.returncode == 0, second.stderr
+        assert json.loads(second.stdout)["already_completed"] is True
+        assert (worktree / "codex-invocations.txt").read_text() == "1"
+
+    def test_governed_pipeline_selects_exact_profile(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        agenteam = self._write_fake_agenteam(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+
+        result = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(agenteam),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "governed_pipeline",
+            cwd=str(repo),
+        )
+
+        assert result.returncode == 0, result.stderr
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "governed_pipeline")
+        commands = json.loads((Path(plan["artifact_path"]) / "commands.json").read_text())
+        profile_index = commands["run"].index("--profile")
+        assert commands["run"][profile_index + 1] == "governed_pipeline"
+
+    def test_agenteam_run_rejects_isolated_role_model_drift(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        agenteam = self._write_fake_agenteam(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "minimal_team")
+        config_path = Path(plan["worktree_path"]) / ".agenteam" / "config.yaml"
+        config_path.write_text(config_path.read_text().replace("gpt-5.5", "gpt-5.4-mini", 1))
+
+        result = run_benchmark_pilot(
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(agenteam),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "minimal_team",
+            cwd=str(repo),
+        )
+
+        assert result.returncode != 0
+        assert "model" in json.loads(result.stderr)["error"].lower()
+        assert not (Path(plan["worktree_path"]) / "codex-invocations.txt").exists()
+
+    def test_agenteam_evidence_resume_does_not_rerun_terminal_runner(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        agenteam = self._write_fake_agenteam(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        state = json.loads(Path(json.loads(prepared.stdout)["state_path"]).read_text())
+        plan = next(row for row in state["plans"] if row["strategy"] == "minimal_team")
+        worktree = Path(plan["worktree_path"])
+        (worktree / "fail-evidence-once").write_text("fail once\n")
+
+        args = [
+            "run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(agenteam),
+            "--repo-root",
+            str(repo),
+            "--strategy",
+            "minimal_team",
+        ]
+        first = run_benchmark_pilot(*args, cwd=str(repo))
+        second = run_benchmark_pilot(*args, cwd=str(repo))
+
+        assert first.returncode == 0, first.stderr
+        assert json.loads(first.stdout)["completed"] is False
+        assert second.returncode == 0, second.stderr
+        assert json.loads(second.stdout)["completed"] is True
+        assert (worktree / "codex-invocations.txt").read_text() == "1"
+
+    def test_finalize_assembles_decision_ready_four_cell_report(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        agenteam = self._write_fake_agenteam(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        for strategy in (
+            "single_agent",
+            "native_high_effort",
+            "minimal_team",
+            "governed_pipeline",
+        ):
+            args = [
+                "run",
+                "--manifest",
+                str(manifest),
+                "--codex-bin",
+                str(codex),
+                "--repo-root",
+                str(repo),
+                "--strategy",
+                strategy,
+            ]
+            if strategy in {"minimal_team", "governed_pipeline"}:
+                args.extend(["--agenteam-rt", str(agenteam)])
+            completed = run_benchmark_pilot(*args, cwd=str(repo))
+            assert completed.returncode == 0, completed.stderr
+            assert json.loads(completed.stdout)["completed"] is True
+
+        finalized = run_benchmark_pilot(
+            "finalize",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(RUNTIME),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert finalized.returncode == 0, finalized.stderr
+        receipt = json.loads(finalized.stdout)
+        assert receipt["finalized"] is True
+        assert receipt["recorded_run_count"] == 4
+        assert receipt["ready_for_executor_decision"] is True
+        results = json.loads(Path(receipt["results_path"]).read_text())
+        assert [row["strategy"] for row in results["runs"]] == [
+            "single_agent",
+            "native_high_effort",
+            "minimal_team",
+            "governed_pipeline",
+        ]
+        assert {row["repo_commit"] for row in results["runs"]} == {
+            self._git(repo, "rev-parse", "HEAD").stdout.strip()
+        }
+        assert all(row["model"] == "gpt-5.5" for row in results["runs"])
+        assert (Path(receipt["report_path"]) / "report.json").is_file()
+        assert (Path(receipt["report_path"]) / "report.md").is_file()
+
+    def test_finalize_rejects_mixed_base_revisions(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        state_path = Path(json.loads(prepared.stdout)["state_path"])
+        state = json.loads(state_path.read_text())
+        state["plans"][0]["base_commit"] = "b" * 40
+        state_path.write_text(json.dumps(state))
+
+        finalized = run_benchmark_pilot(
+            "finalize",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(RUNTIME),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert finalized.returncode != 0
+        assert "base revision" in json.loads(finalized.stderr)["error"].lower()
+
+    def test_finalize_rejects_capability_drift(self, tmp_path):
+        repo, manifest, codex, _artifact_root = self._seed_repo(tmp_path)
+        prepared = run_benchmark_pilot(
+            "prepare",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+        assert prepared.returncode == 0, prepared.stderr
+        state_path = Path(json.loads(prepared.stdout)["state_path"])
+        state = json.loads(state_path.read_text())
+        state["plans"][2]["model"] = "gpt-5.4-mini"
+        state_path.write_text(json.dumps(state))
+
+        finalized = run_benchmark_pilot(
+            "finalize",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(RUNTIME),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert finalized.returncode != 0
+        assert "capability drift" in json.loads(finalized.stderr)["error"].lower()
+
+    def test_dry_run_prints_post_merge_command_without_model_calls(self, tmp_path):
+        repo, manifest, codex, artifact_root = self._seed_repo(tmp_path)
+
+        dry_run = run_benchmark_pilot(
+            "dry-run",
+            "--manifest",
+            str(manifest),
+            "--codex-bin",
+            str(codex),
+            "--agenteam-rt",
+            str(RUNTIME),
+            "--repo-root",
+            str(repo),
+            cwd=str(repo),
+        )
+
+        assert dry_run.returncode == 0, dry_run.stderr
+        receipt = json.loads(dry_run.stdout)
+        assert receipt["dry_run"] is True
+        assert receipt["model_calls_started"] is False
+        assert receipt["strategy_count"] == 4
+        assert "benchmark-pilot.py execute" in receipt["post_merge_command"]
+        assert not (artifact_root / "dispatch-scope-pilot-v1" / "state.json").exists()
+        assert not (repo / "codex-invocations.txt").exists()

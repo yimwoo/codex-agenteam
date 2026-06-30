@@ -12,7 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME = ROOT / "runtime" / "agenteam_rt.py"
 REQUIREMENTS = ROOT / "runtime" / "requirements.txt"
@@ -64,7 +63,7 @@ def run_command(
     env: dict[str, str] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 - caller supplies an argument-list command
         command,
         cwd=str(cwd),
         env={**os.environ, **(env or {})},
@@ -115,7 +114,7 @@ def load_last_json(output: str) -> dict:
 
 
 def ensure_runtime_python(args: argparse.Namespace, temp_root: Path | None) -> tuple[str, str]:
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 - fixed local runtime probe
         [sys.executable, str(RUNTIME), "--help"],
         capture_output=True,
         text=True,
@@ -255,14 +254,19 @@ def run_smoke(args: argparse.Namespace) -> dict:
             f"Expected dev dispatch, got: {dispatch_implement}",
         )
 
-        verify_plan = run_rt(python_bin, project_dir, "verify-plan", "implement", "--run-id", run_id)
+        verify_plan = run_rt(
+            python_bin, project_dir, "verify-plan", "implement", "--run-id", run_id
+        )
         assert_true(
-            verify_plan["verify"] in ("npm test", "python3 -m pytest -v", "go test ./...", "cargo test", "make test"),
+            verify_plan["verify"]
+            in ("npm test", "python3 -m pytest -v", "go test ./...", "cargo test", "make test"),
             f"Unexpected verify command: {verify_plan}",
         )
 
         final_verify = run_rt(python_bin, project_dir, "final-verify-plan", "--run-id", run_id)
-        assert_true(isinstance(final_verify["commands"], list), "final-verify-plan should return commands.")
+        assert_true(
+            isinstance(final_verify["commands"], list), "final-verify-plan should return commands."
+        )
 
         run_rt(
             python_bin,
@@ -296,8 +300,12 @@ def run_smoke(args: argparse.Namespace) -> dict:
         post_status = run_rt(python_bin, project_dir, "status", run_id)
         implement_stage = post_status["stages"]["implement"]
         review_stage = post_status["stages"]["review"]
-        assert_true(implement_stage.get("verify_result") == "pass", "verify result should be recorded.")
-        assert_true(review_stage.get("gate_result") == "approved", "gate result should be recorded.")
+        assert_true(
+            implement_stage.get("verify_result") == "pass", "verify result should be recorded."
+        )
+        assert_true(
+            review_stage.get("gate_result") == "approved", "gate result should be recorded."
+        )
 
         standup = run_rt(python_bin, project_dir, "standup")
         assert_true(standup["run"]["run_id"] == run_id, "standup should reference the latest run.")
@@ -334,7 +342,9 @@ def main() -> int:
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        playground_note = "temporary fallback playground" if report["used_fallback_playground"] else "project"
+        playground_note = (
+            "temporary fallback playground" if report["used_fallback_playground"] else "project"
+        )
         print(f"Smoke test passed for {playground_note}: {report['project_dir']}")
         print(f"Runtime python: {report['runtime_python_source']} ({report['runtime_python']})")
         print(f"Run ID: {report['run_id']}")

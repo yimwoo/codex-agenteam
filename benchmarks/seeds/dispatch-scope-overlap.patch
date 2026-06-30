@@ -1,0 +1,11 @@
+diff --git a/runtime/agenteam/dispatch.py b/runtime/agenteam/dispatch.py
+--- a/runtime/agenteam/dispatch.py
++++ b/runtime/agenteam/dispatch.py
+@@ -60,6 +60,6 @@ def partition_writer_groups(
+         placed = False
+         for gi, grp in enumerate(groups):
+-            if not (w_scope & group_scopes[gi]):
++            if w_scope & group_scopes[gi]:
+                 # No overlap with any existing role in this group
+                 grp.append(wname)
+                 group_scopes[gi] |= w_scope

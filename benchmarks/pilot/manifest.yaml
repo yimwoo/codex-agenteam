@@ -1,0 +1,46 @@
+schema_version: "1"
+pilot_id: dispatch-scope-pilot-v1
+base_ref: HEAD
+artifact_root: ../../.agenteam/benchmarks
+suite: ../tasks/pilot-v1.yaml
+
+codex:
+  version: "0.137.0"
+  gpt_5_6_sol:
+    available: false
+    reason: >
+      GPT-5.6 Sol is absent from the Codex 0.137.0 live model catalog and
+      remains limited preview; the pilot uses an explicitly named GPT-5.5
+      high-effort baseline instead of silently substituting it.
+
+task:
+  id: dispatch-scope-guardrail
+  prompt: >
+    Fix the seeded regression in scoped dispatch planning so writers with an
+    overlapping write-scope pattern never share a parallel group. Preserve
+    deterministic grouping for non-overlapping writers, keep read-only roles
+    dispatchable, and limit changes to the smallest justified code and tests.
+  seed_patch: ../seeds/dispatch-scope-overlap.patch
+  precheck: python3 -m pytest test/test_runtime.py::TestWriterGroups -q
+  verify: python3 -m pytest test/test_runtime.py::TestWriterGroups -q
+  timeout_seconds: 600
+
+strategies:
+  - id: single_agent
+    adapter: native
+    model: gpt-5.5
+    reasoning_effort: medium
+  - id: native_high_effort
+    adapter: native
+    model: gpt-5.5
+    reasoning_effort: xhigh
+  - id: minimal_team
+    adapter: agenteam
+    profile: minimal_team
+    model: gpt-5.5
+    reasoning_effort: medium
+  - id: governed_pipeline
+    adapter: agenteam
+    profile: governed_pipeline
+    model: gpt-5.5
+    reasoning_effort: medium

@@ -1,0 +1,59 @@
+version: "1"
+isolation: none
+structured_handoffs: true
+
+roles:
+  researcher:
+    model: gpt-5.5
+    reasoning_effort: medium
+  pm:
+    model: gpt-5.5
+    reasoning_effort: medium
+  architect:
+    model: gpt-5.5
+    reasoning_effort: medium
+  dev:
+    model: gpt-5.5
+    reasoning_effort: medium
+    can_write: true
+    write_scope: ["runtime/**", "test/**"]
+  qa:
+    model: gpt-5.5
+    reasoning_effort: medium
+    can_write: true
+    write_scope: ["runtime/**", "test/**"]
+  reviewer:
+    model: gpt-5.5
+    reasoning_effort: medium
+    can_write: false
+
+pipeline:
+  stages:
+    - name: research
+      roles: [researcher]
+      gate: auto
+    - name: design
+      roles: [architect, pm]
+      gate: auto
+    - name: implement
+      roles: [dev]
+      gate: auto
+      verify: "python3 -m pytest test/test_runtime.py::TestWriterGroups -q"
+      max_retries: 1
+    - name: test
+      roles: [qa]
+      gate: auto
+      verify: "python3 -m pytest test/test_runtime.py::TestWriterGroups -q"
+      max_retries: 1
+      rework_to: implement
+    - name: review
+      roles: [reviewer]
+      gate: auto
+  profiles:
+    minimal_team:
+      stages: [implement, review]
+    governed_pipeline:
+      stages: [research, design, implement, test, review]
+
+final_verify:
+  - "python3 -m pytest test/test_runtime.py::TestWriterGroups -q"
