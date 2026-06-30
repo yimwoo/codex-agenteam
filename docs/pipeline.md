@@ -160,12 +160,19 @@ agenteam-rt benchmark record \
   --evidence .agenteam/evidence/<id>.json \
   --task-id <task-id> \
   --strategy governed_pipeline \
-  --quality-score 0.85
+  --quality-score 0.85 \
+  --model <exact-model-id> \
+  --reasoning-effort <accepted-value> \
+  --codex-version <exact-version> \
+  --repo-commit <git-sha>
 ```
 
 The converter derives execution and recovery metrics from evidence. Quality
 remains an explicit score, and cost is optional when the execution surface does
-not expose it.
+not expose it. It stores the evidence SHA-256 so reports can distinguish a
+stable input from a path whose contents later changed. Benchmark reports also
+audit metadata completeness and environment drift before declaring a matrix
+ready for an executor decision.
 
 ## Structured Role Handoffs
 

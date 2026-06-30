@@ -1,5 +1,6 @@
 """Unit tests for agenteam_rt.py."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -9090,6 +9091,12 @@ class TestBenchmarkCommands:
             "0.88",
             "--model",
             "current-codex",
+            "--reasoning-effort",
+            "high",
+            "--codex-version",
+            "0.114.0",
+            "--repo-commit",
+            "0123456789abcdef0123456789abcdef01234567",
             cwd=str(tmp_path),
         )
 
@@ -9104,6 +9111,11 @@ class TestBenchmarkCommands:
         assert row["status"] == "recorded"
         assert row["profile"] == "minimal-team"
         assert row["failure_reason"] is None
+        assert row["model"] == "current-codex"
+        assert row["reasoning_effort"] == "high"
+        assert row["codex_version"] == "0.114.0"
+        assert row["repo_commit"] == "0123456789abcdef0123456789abcdef01234567"
+        assert row["evidence"]["sha256"] == hashlib.sha256(evidence.read_bytes()).hexdigest()
         assert row["evidence"]["retry_count"] == 1
         assert row["evidence"]["rework_count"] == 1
         assert row["evidence"]["artifact_count"] == 6
@@ -9131,7 +9143,8 @@ class TestBenchmarkCommands:
             cwd=str(tmp_path),
         )
         assert report.returncode == 0, report.stderr
-        summary = json.loads(report.stdout)["strategies"][0]
+        report_payload = json.loads(report.stdout)
+        summary = report_payload["strategies"][0]
         assert summary["evidence_run_count"] == 1
         assert summary["total_failed_stage_count"] == 0
         assert summary["total_role_attempt_count"] == 3
@@ -9139,7 +9152,47 @@ class TestBenchmarkCommands:
         assert summary["total_retry_count"] == 1
         assert summary["total_rework_count"] == 1
         assert summary["total_artifact_count"] == 6
-        assert "## Evidence And Recovery" in markdown.read_text()
+        reproducibility = report_payload["reproducibility"]
+        assert reproducibility["metadata_complete_run_count"] == 1
+        assert reproducibility["evidence_hash_run_count"] == 1
+        assert reproducibility["ready_for_executor_decision"] is True
+        assert reproducibility["issues"] == []
+        assert len(reproducibility["suite_sha256"]) == 64
+        assert reproducibility["strategy_environments"] == [
+            {
+                "strategy": "minimal-team",
+                "recorded_runs": 1,
+                "models": ["current-codex"],
+                "reasoning_efforts": ["high"],
+                "codex_versions": ["0.114.0"],
+                "repo_commits": ["0123456789abcdef0123456789abcdef01234567"],
+                "metadata_complete": True,
+                "stable": True,
+            }
+        ]
+        markdown_text = markdown.read_text()
+        assert "## Evidence And Recovery" in markdown_text
+        assert "## Reproducibility And Decision Readiness" in markdown_text
+        assert "Ready for executor decision: **yes**" in markdown_text
+
+        legacy_payload = json.loads(results.read_text())
+        del legacy_payload["runs"][0]["evidence"]["sha256"]
+        results.write_text(json.dumps(legacy_payload))
+        legacy_report = run_rt(
+            "benchmark",
+            "report",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            cwd=str(tmp_path),
+        )
+        assert legacy_report.returncode == 0, legacy_report.stderr
+        legacy_reproducibility = json.loads(legacy_report.stdout)["reproducibility"]
+        assert legacy_reproducibility["ready_for_executor_decision"] is False
+        assert [issue["code"] for issue in legacy_reproducibility["issues"]] == [
+            "unhashed_evidence"
+        ]
 
     def test_benchmark_record_preserves_failure_and_alternate_output(self, tmp_path):
         suite = self._write_suite(tmp_path)
@@ -9214,3 +9267,166 @@ class TestBenchmarkCommands:
         assert record.returncode != 0
         error = json.loads(record.stderr)
         assert "terminal" in error["error"]
+
+    def test_benchmark_validate_rejects_malformed_reproducibility_metadata(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        results = self._init_results(tmp_path, suite)
+        payload = json.loads(results.read_text())
+        row = payload["runs"][0]
+        row.update(
+            {
+                "model": " ",
+                "reasoning_effort": "",
+                "codex_version": 114,
+                "repo_commit": "not-a-commit",
+                "evidence": {
+                    "kind": "agenteam.run_evidence",
+                    "schema_version": "1",
+                    "source": "evidence.json",
+                    "sha256": "short",
+                    "final_verify_passed": True,
+                },
+            }
+        )
+        results.write_text(json.dumps(payload))
+
+        validate = run_rt(
+            "benchmark",
+            "validate",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            cwd=str(tmp_path),
+        )
+
+        assert validate.returncode != 0
+        error = json.loads(validate.stderr)["error"]
+        assert "'model' must be a non-empty string" in error
+        assert "'reasoning_effort' must be a non-empty string" in error
+        assert "'codex_version' must be a non-empty string" in error
+        assert "repo_commit must be a 7-to-64-character hexadecimal revision" in error
+        assert "evidence.sha256 must be a 64-character hexadecimal digest" in error
+
+    def test_benchmark_report_flags_cross_strategy_environment_drift(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        results = tmp_path / "results.json"
+        evidence = self._write_evidence(tmp_path)
+        init = run_rt(
+            "benchmark",
+            "init-results",
+            "--suite",
+            str(suite),
+            "--strategy",
+            "single_agent",
+            "--strategy",
+            "minimal_team",
+            "--output",
+            str(results),
+            cwd=str(tmp_path),
+        )
+        assert init.returncode == 0, init.stderr
+
+        for strategy, version, commit in (
+            ("single_agent", "0.114.0", "a" * 40),
+            ("minimal_team", "0.115.0", "b" * 40),
+        ):
+            record = run_rt(
+                "benchmark",
+                "record",
+                "--suite",
+                str(suite),
+                "--results",
+                str(results),
+                "--evidence",
+                str(evidence),
+                "--task-id",
+                "task-one",
+                "--strategy",
+                strategy,
+                "--quality-score",
+                "0.8",
+                "--model",
+                "current-codex",
+                "--reasoning-effort",
+                "high",
+                "--codex-version",
+                version,
+                "--repo-commit",
+                commit,
+                cwd=str(tmp_path),
+            )
+            assert record.returncode == 0, record.stderr
+
+        report = run_rt(
+            "benchmark",
+            "report",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            cwd=str(tmp_path),
+        )
+
+        assert report.returncode == 0, report.stderr
+        reproducibility = json.loads(report.stdout)["reproducibility"]
+        assert reproducibility["metadata_complete_run_count"] == 2
+        assert reproducibility["ready_for_executor_decision"] is False
+        assert [issue["code"] for issue in reproducibility["issues"]] == [
+            "shared_environment_drift"
+        ]
+        assert reproducibility["issues"][0]["fields"] == ["codex_version", "repo_commit"]
+
+    def test_benchmark_report_flags_environment_drift_within_strategy(self, tmp_path):
+        suite = self._write_suite(tmp_path)
+        suite_payload = yaml.safe_load(suite.read_text())
+        second_task = dict(suite_payload["tasks"][0])
+        second_task.update({"id": "task-two", "title": "Task two", "prompt": "Task two"})
+        suite_payload["tasks"].append(second_task)
+        suite.write_text(yaml.safe_dump(suite_payload))
+        results = tmp_path / "results.json"
+        base_row = {
+            "strategy": "minimal_team",
+            "status": "recorded",
+            "success": True,
+            "latency_seconds": 10,
+            "cost_usd": None,
+            "quality_score": 0.8,
+            "reasoning_effort": "high",
+            "codex_version": "0.114.0",
+            "repo_commit": "a" * 40,
+        }
+        results.write_text(
+            json.dumps(
+                {
+                    "suite_id": "test-suite",
+                    "quality_scale": "0.0-1.0",
+                    "strategies": ["minimal_team"],
+                    "runs": [
+                        {**base_row, "task_id": "task-one", "model": "model-a"},
+                        {**base_row, "task_id": "task-two", "model": "model-b"},
+                    ],
+                }
+            )
+        )
+
+        report = run_rt(
+            "benchmark",
+            "report",
+            "--suite",
+            str(suite),
+            "--results",
+            str(results),
+            cwd=str(tmp_path),
+        )
+
+        assert report.returncode == 0, report.stderr
+        reproducibility = json.loads(report.stdout)["reproducibility"]
+        assert reproducibility["ready_for_executor_decision"] is False
+        assert [issue["code"] for issue in reproducibility["issues"]] == [
+            "strategy_environment_drift"
+        ]
+        assert reproducibility["issues"][0]["strategies"] == [
+            {"strategy": "minimal_team", "fields": ["model"]}
+        ]
+        assert reproducibility["strategy_environments"][0]["stable"] is False
