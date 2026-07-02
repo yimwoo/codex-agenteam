@@ -12,6 +12,7 @@ from .events import append_event
 from .handoff import HANDOFF_SCHEMA_PATH, build_handoff_provenance, load_handoff
 from .prompt import build_prompt
 from .report import _build_run_summary, _extract_lessons
+from .roles import resolve_roles
 from .state import (
     cmd_init,
 )
@@ -103,10 +104,46 @@ def _codex_args_set_structured_output(codex_args: list[str]) -> bool:
     )
 
 
+def _codex_args_model(codex_args: list[str]) -> str | None:
+    """Return the explicit passthrough model, when present."""
+    for index, token in enumerate(codex_args):
+        if token in {"--model", "-m"} and index + 1 < len(codex_args):
+            return codex_args[index + 1]
+        if token.startswith("--model="):
+            return token.split("=", 1)[1]
+        if token.startswith("-m") and len(token) > 2:
+            return token[2:].removeprefix("=")
+    return None
+
+
+def _codex_args_set_model(codex_args: list[str]) -> bool:
+    """Return True when passthrough args explicitly select a model."""
+    return _codex_args_model(codex_args) is not None
+
+
+def _codex_args_reasoning_effort(codex_args: list[str]) -> str | None:
+    """Return the explicit passthrough reasoning effort, when present."""
+    for index, token in enumerate(codex_args):
+        if token in {"--config", "-c"} and index + 1 < len(codex_args):
+            config_value = codex_args[index + 1]
+            if config_value.startswith("model_reasoning_effort="):
+                return config_value.split("=", 1)[1].strip("\"'")
+        if token.startswith(("--config=", "-c=")) and "model_reasoning_effort=" in token:
+            return token.split("model_reasoning_effort=", 1)[1].strip("\"'")
+    return None
+
+
+def _codex_args_set_reasoning_effort(codex_args: list[str]) -> bool:
+    """Return True when passthrough config sets model reasoning effort."""
+    return _codex_args_reasoning_effort(codex_args) is not None
+
+
 def _build_codex_exec_command(
     codex_bin: str,
     codex_args: list[str],
     *,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
     output_schema: Path | None = None,
     output_last_message: Path | None = None,
 ) -> list[str]:
@@ -114,6 +151,10 @@ def _build_codex_exec_command(
     cmd = [codex_bin, "exec", "--json"]
     if not _codex_args_set_sandbox(codex_args):
         cmd.extend(["--sandbox", DEFAULT_CODEX_SANDBOX])
+    if model and not _codex_args_set_model(codex_args):
+        cmd.extend(["--model", model])
+    if reasoning_effort and not _codex_args_set_reasoning_effort(codex_args):
+        cmd.extend(["--config", f'model_reasoning_effort="{reasoning_effort}"'])
     cmd.extend(codex_args)
     if output_schema is not None:
         cmd.extend(["--output-schema", str(output_schema)])
@@ -353,10 +394,22 @@ def _run_role(
     )
     append_event(run_id, "role_started", stage, {"role": role_name})
 
+    resolved_role = resolve_roles(config).get(role_name, {})
+    model = resolved_role.get("model")
+    reasoning_effort = resolved_role.get("reasoning_effort")
+    model = model if isinstance(model, str) and model else None
+    reasoning_effort = (
+        reasoning_effort if isinstance(reasoning_effort, str) and reasoning_effort else None
+    )
+    effective_model = _codex_args_model(codex_args) or model
+    effective_reasoning_effort = _codex_args_reasoning_effort(codex_args) or reasoning_effort
+
     start = time.time()
     cmd = _build_codex_exec_command(
         codex_bin,
         codex_args,
+        model=model,
+        reasoning_effort=reasoning_effort,
         output_schema=HANDOFF_SCHEMA_PATH if structured_handoffs else None,
         output_last_message=handoff_path if structured_handoffs else None,
     )
@@ -439,6 +492,8 @@ def _run_role(
         "started_at": _now_iso(),
         "stage": stage,
         "role": role_name,
+        "model": effective_model,
+        "reasoning_effort": effective_reasoning_effort,
     }
     if structured_handoffs:
         exec_result["handoff"] = {
