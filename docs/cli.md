@@ -134,7 +134,7 @@ agenteam-rt run --task-file seed.md --profile standard --output-dir ./out
 agenteam-rt run --run-id <id>  # resume an existing run
 ```
 
-`agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed. The runner invokes Codex with `codex exec --json --sandbox workspace-write` by default; pass an explicit `--sandbox ...` value through `--codex-args` when an automation needs a different boundary.
+`agenteam-rt run` treats non-zero role exits as stage failures, retries failed verification up to `max_retries`, blocks on human/reviewer/QA gates unless `--auto-approve-gates` is set, and runs final verification before marking the run completed. The runner invokes Codex with `codex exec --json --sandbox workspace-write` by default and passes each role's resolved `model` and `reasoning_effort`; explicit model, reasoning, or sandbox values in `--codex-args` take precedence. The effective model and reasoning settings are retained in the role's `exec.json` audit artifact.
 
 ### Seeded benchmark pilot
 

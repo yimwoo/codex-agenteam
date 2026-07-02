@@ -7540,6 +7540,26 @@ sys.exit(code)
             str(output),
         ]
 
+    def test_build_codex_exec_command_preserves_explicit_model_overrides(self):
+        from runtime.agenteam.runner import _build_codex_exec_command, _parse_codex_args
+
+        assert _build_codex_exec_command(
+            "codex",
+            _parse_codex_args('--model gpt-5.4 --config model_reasoning_effort="low"'),
+            model="gpt-5.5",
+            reasoning_effort="medium",
+        ) == [
+            "codex",
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--model",
+            "gpt-5.4",
+            "--config",
+            "model_reasoning_effort=low",
+        ]
+
     def test_run_missing_codex_binary_fails(self, tmp_path):
         make_config(tmp_path)
         r = run_rt(
@@ -7621,10 +7641,88 @@ sys.exit(code)
             "--json",
             "--sandbox",
             "workspace-write",
+            "--config",
+            'model_reasoning_effort="high"',
             "--skip-git-repo-check",
         ]
         assert captured["input"] == "hello"
         assert result["exit_code"] == 0
+
+    def test_run_role_pins_resolved_role_model_and_reasoning_effort(self, tmp_path, monkeypatch):
+        from runtime.agenteam import runner
+
+        captured = {}
+        monkeypatch.setattr(runner, "build_prompt", lambda *args, **kwargs: {"prompt": "hello"})
+        monkeypatch.setattr(runner, "_emit_event", lambda *args, **kwargs: None)
+
+        def fake_run(cmd, input, capture_output, text, cwd, timeout):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, '{"type":"turn.completed"}', "")
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+        result = runner._run_role(
+            run_id="run-123",
+            stage="implement",
+            role_name="dev",
+            config={
+                "roles": {
+                    "dev": {
+                        "model": "gpt-5.5",
+                        "reasoning_effort": "medium",
+                    }
+                }
+            },
+            codex_bin="codex",
+            codex_args=runner._parse_codex_args("skip-git-repo-check"),
+            output_dir=tmp_path,
+            events_file=tmp_path / "events.jsonl",
+        )
+
+        assert captured["cmd"] == [
+            "codex",
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--model",
+            "gpt-5.5",
+            "--config",
+            'model_reasoning_effort="medium"',
+            "--skip-git-repo-check",
+        ]
+        assert result["exit_code"] == 0
+        exec_result = json.loads((tmp_path / "implement" / "dev" / "exec.json").read_text())
+        assert exec_result["model"] == "gpt-5.5"
+        assert exec_result["reasoning_effort"] == "medium"
+
+        override_output = tmp_path / "override"
+        override_result = runner._run_role(
+            run_id="run-123",
+            stage="implement",
+            role_name="dev",
+            config={
+                "roles": {
+                    "dev": {
+                        "model": "gpt-5.5",
+                        "reasoning_effort": "medium",
+                    }
+                }
+            },
+            codex_bin="codex",
+            codex_args=runner._parse_codex_args(
+                '--model gpt-5.4 --config model_reasoning_effort="low"'
+            ),
+            output_dir=override_output,
+            events_file=tmp_path / "events.jsonl",
+        )
+
+        assert override_result["exit_code"] == 0
+        override_exec = json.loads(
+            (override_output / "implement" / "dev" / "exec.json").read_text()
+        )
+        assert override_exec["model"] == "gpt-5.4"
+        assert override_exec["reasoning_effort"] == "low"
 
     def test_run_no_task_fails(self, tmp_path):
         make_config(tmp_path)
